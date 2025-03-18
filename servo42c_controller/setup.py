@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'servo_controller = servo42c_controller.node:main',
+            'servo42c_controller = servo42c_controller.node:main',
         ],
     },
 )
