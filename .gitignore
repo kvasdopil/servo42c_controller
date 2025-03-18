@@ -1,0 +1,62 @@
+# ROS2 specific ignores
+build/
+install/
+log/
+
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# C++ specific
+*.o
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.cmake
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Colcon specific
+.colcon/
+.colcon_cd_root
+
+# ROS specific logs and runtime files
+*.log
+core.* 
