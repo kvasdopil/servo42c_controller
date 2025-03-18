@@ -3,8 +3,12 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
 import serial
-import time
 from typing import List, Optional, Dict
+
+# TODO initialize pubsub immediately after servo is found
+# TODO add stop command
+# TODO add feedback for when servo is at target
+# TODO add speed control 
 
 GET_PULSES = 0x33
 GET_SERIAL_ENABLED = 0xf3
@@ -26,6 +30,7 @@ class ServoControllerNode(Node):
         # Store publishers and active servos
         self.angle_publishers: Dict[int, rclpy.publisher.Publisher] = {}
         self.active_servos: List[int] = []
+        self.target_positions: Dict[int, int] = {}
         
         # Initialize serial port
         self._setup_serial()
@@ -84,7 +89,6 @@ class ServoControllerNode(Node):
             return
         
         try:
-            self.get_logger().debug(f'Sending: {" ".join([f"{x:02x}" for x in data])}')
             self.serial_port.write(data)
         except serial.SerialException as e:
             self.get_logger().error(f'Failed to write to serial port: {str(e)}')
@@ -113,20 +117,30 @@ class ServoControllerNode(Node):
         await self.write(bytes([0xe0 + id] + msg))
         response = await self.read(id, return_length)
         return response
+    
+    angle_to_pulses = lambda self, angle: round(angle * PULSES_PER_ROTATION / 360)
+    pulses_to_angle = lambda self, pulses: float(pulses) * 360.0 / PULSES_PER_ROTATION
 
-    async def rotate(self, id: int, speed: int, position: float) -> bool:
+    async def rotate(self, id: int, speed: int, angle: float) -> bool:
         """Rotate servo to specified position"""
+
+        new_target_pulses = self.angle_to_pulses(angle)
+        prev_target_pulses = self.target_positions.get(id, 0)
+        diff = new_target_pulses - prev_target_pulses
+
+        # If no movement is needed, return success immediately
+        if diff == 0:
+            return True
+
         # Calculate pulses preserving sign
-        pos = round(position * PULSES_PER_ROTATION / 360)
-        abs_pos = abs(pos)
+        abs_diff = abs(diff)
         # Set direction bit based on original position value
-        sign_bit = 0b10000000 if pos > 0 else 0
+        sign_bit = 0b10000000 if diff > 0 else 0
         
-        while abs_pos > 0:
-            p = min(abs_pos, 0xffff)
-            abs_pos -= p
-            
-            self.get_logger().debug(f'rotate: pos={pos} id={id} sign={sign_bit} speed={speed} p={p}')
+        ok = False  # Initialize ok variable
+        while abs_diff > 0:
+            p = min(abs_diff, 0xffff)
+            abs_diff -= p
             
             [ok] = await self.send(id, [
                 ROTATE,
@@ -134,13 +148,14 @@ class ServoControllerNode(Node):
                 (p >> 8) & 0xff,
                 p & 0xff
             ], 1)
-            
-        return ok == 1
 
-    async def get_serial_enabled(self, id: int) -> bool:
-        """Get serial enabled status"""
-        [a] = await self.send(id, [GET_SERIAL_ENABLED], 1)
-        return a == 1
+            if ok != 1:  # If any rotation command fails, return False
+                return False
+
+        # store target position
+        self.target_positions[id] = new_target_pulses
+            
+        return True  # All rotation commands succeeded
 
     async def get_pulses(self, id: int) -> int:
         """Get current pulse count"""
@@ -155,22 +170,42 @@ class ServoControllerNode(Node):
     async def get_angle(self, id: int) -> float:
         """Get current angle"""
         pulses = await self.get_pulses(id)
-        return float(pulses) * 360.0 / PULSES_PER_ROTATION
-
-    async def stop(self, id: int) -> None:
-        """Stop servo"""
-        await self.send(id, [STOP], 1)
+        return self.pulses_to_angle(pulses)
 
     def enumerate_servos(self) -> None:
-        """Detect active servos by checking serial enabled status"""
+        """Detect active servos by checking serial enabled status and get initial positions"""
         for servo_id in range(10):  # Check IDs 0-9
             try:
                 if self.get_serial_enabled_sync(servo_id):
                     self.active_servos.append(servo_id)
-                    self.get_logger().info(f'Found servo with ID {servo_id}')
+                    # Get initial position synchronously during enumeration
+                    initial_pulses = self.get_pulses_sync(servo_id)
+                    self.target_positions[servo_id] = initial_pulses
+                    self.get_logger().info(f'Found servo with ID {servo_id} at position {initial_pulses} pulses')
             except Exception as e:
                 self.get_logger().debug(f'No servo found at ID {servo_id}: {str(e)}')
-    
+
+    def get_pulses_sync(self, id: int) -> int:
+        """Synchronous version of get_pulses for initialization"""
+        if not self.serial_port:
+            raise RuntimeError('Serial port not open')
+            
+        self.serial_port.write(bytes([0xe0 + id, GET_PULSES]))
+        data = self.serial_port.read(5)  # Read ID byte and 4 bytes of position data
+        
+        if len(data) != 5:
+            raise RuntimeError('Timeout reading from serial port')
+            
+        if data[0] != 0xe0 + id:
+            raise RuntimeError('Invalid ID received')
+            
+        # Combine bytes into a signed 32-bit integer
+        value = (data[1] << 24) + (data[2] << 16) + (data[3] << 8) + data[4]
+        # Handle two's complement for negative values
+        if value & 0x80000000:  # If highest bit is set (negative)
+            value = -((~value & 0xFFFFFFFF) + 1)
+        return value
+
     def get_serial_enabled_sync(self, id: int) -> bool:
         """Synchronous version of get_serial_enabled for initialization"""
         if not self.serial_port:
@@ -205,11 +240,6 @@ class ServoControllerNode(Node):
                 self.angle_publishers[servo_id].publish(msg)
             except Exception as e:
                 self.get_logger().error(f'Failed to publish angle for servo {servo_id}: {str(e)}')
-
-    @staticmethod
-    async def sleep(seconds: float) -> None:
-        """Async sleep helper"""
-        await rclpy.sleep(seconds)
 
 def main(args=None):
     rclpy.init(args=args)
