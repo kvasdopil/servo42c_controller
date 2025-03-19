@@ -46,6 +46,7 @@ class Servo:
         self.max_speed = max_speed
         self.min_speed = min_speed
         self.pulses_per_rotation = steps_per_rev * microstep_factor * gear_ratio
+        self.is_enabled = True
 
         # Publisher
         self.position_publisher = node.create_publisher(
@@ -54,12 +55,20 @@ class Servo:
             10
         )
 
-        # Subscriber
+        # Subscribers
         self.command_subscriber = node.create_subscription(
             Float32,
             f'servo42c/servo_{servo_id}/command',
             self._command_angle_callback,
             10
+        )
+
+        # Emergency stop subscriber
+        self.emergency_stop_subscriber = node.create_subscription(
+            Bool,
+            f'servo42c/servo_{servo_id}/emergency_stop',
+            self._emergency_stop_callback,
+            1  # Higher priority QoS
         )
 
     def log(self, level: str, msg: str):
@@ -93,6 +102,10 @@ class Servo:
 
     def rotate(self, angle: float, speed: int = 120) -> bool:
         """Rotate servo to specified angle"""
+        if not self.is_enabled:
+            self.log('warn', f'Servo {self.id} is currently disabled')
+            return False
+
         if not self.min_angle <= angle <= self.max_angle:
             self.log(
                 'error', f'Angle {angle} out of bounds for servo {self.id}')
@@ -137,6 +150,7 @@ class Servo:
             # Destroy publishers and subscribers
             self.position_publisher.destroy()
             self.command_subscriber.destroy()
+            self.emergency_stop_subscriber.destroy()
 
             self.log('info', f'Cleaned up resources for servo {self.id}')
         except Exception as e:
@@ -177,3 +191,18 @@ class Servo:
         except Exception as e:
             self.log(
                 'error', f'Failed to handle command angle for servo {self.id}: {str(e)}')
+
+    def _emergency_stop_callback(self, msg: Bool) -> None:
+        """Handle emergency stop messages"""
+        try:
+            if msg.data:  # If True, trigger emergency stop
+                self.stop()
+                self.is_enabled = False
+                self.log(
+                    'warn', f'Emergency stop triggered for servo {self.id}')
+            else:  # If False, re-enable the servo
+                self.is_enabled = True
+                self.log('info', f'Servo {self.id} re-enabled')
+        except Exception as e:
+            self.log(
+                'error', f'Failed to handle emergency stop for servo {self.id}: {str(e)}')

@@ -6,7 +6,6 @@ import sys
 from .protocol import Servo42CProtocol
 from .servo import Servo
 
-# TODO initialize pubsub immediately after servo is found
 # TODO add stop command
 # TODO add feedback for when servo is at target
 # TODO add speed control
@@ -14,6 +13,8 @@ from .servo import Servo
 # Limits and safety
 MIN_ANGLE = -360.0  # degrees
 MAX_ANGLE = 360.0   # degrees
+
+UPDATE_RATE = 0.1  # seconds
 
 
 class ServoControllerNode(Node):
@@ -26,6 +27,7 @@ class ServoControllerNode(Node):
         self.declare_parameter('min_angle', MIN_ANGLE)
         self.declare_parameter('max_angle', MAX_ANGLE)
         self.declare_parameter('position_tolerance', 0.5)  # degrees
+        self.declare_parameter('update_rate', UPDATE_RATE)
 
         # Initialize protocol
         device = self.get_parameter('device').value
@@ -57,7 +59,8 @@ class ServoControllerNode(Node):
                     f'No servo found at ID {servo_id}: {str(e)}')
 
         # Timer for updating servo positions and status
-        self.create_timer(0.1, self.update_servos)  # 10Hz
+        update_rate = self.get_parameter('update_rate').value
+        self.create_timer(update_rate, self.update_servos)
 
         self.get_logger().info(
             f'Servo controller node initialized with {len(self.servos)} servos')
