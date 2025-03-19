@@ -46,30 +46,13 @@ class Servo:
         self.max_speed = max_speed
         self.min_speed = min_speed
         self.pulses_per_rotation = steps_per_rev * microstep_factor * gear_ratio
-        self.is_enabled = True
-
-        # Publisher
-        self.position_publisher = node.create_publisher(
-            Float32,
-            f'servo42c/servo_{servo_id}/position',
-            10
-        )
-
-        # Subscribers
-        self.command_subscriber = node.create_subscription(
-            Float32,
-            f'servo42c/servo_{servo_id}/command',
-            self._command_angle_callback,
-            10
-        )
-
-        # Emergency stop subscriber
-        self.emergency_stop_subscriber = node.create_subscription(
-            Bool,
-            f'servo42c/servo_{servo_id}/emergency_stop',
-            self._emergency_stop_callback,
-            1  # Higher priority QoS
-        )
+        self.is_enabled = False
+        self.node = node  # Store node reference
+        
+        # Don't create publishers/subscribers yet
+        self.position_publisher = None
+        self.command_subscriber = None
+        self.emergency_stop_subscriber = None
 
     def angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
@@ -84,15 +67,40 @@ class Servo:
         try:
             if not self.protocol.get_serial_enabled(self.id):
                 return False
+            
+            self.is_enabled = True
 
+            # Get initial position
             self.current_pulses = self.protocol.get_pulses(self.id)
             self.target_pulses = self.current_pulses
+
+            # Only create publishers and subscribers if servo is found
+            self.position_publisher = self.node.create_publisher(
+                Float32,
+                f'servo42c/servo_{self.id}/position',
+                10
+            )
+
+            self.command_subscriber = self.node.create_subscription(
+                Float32,
+                f'servo42c/servo_{self.id}/command',
+                self._command_angle_callback,
+                10
+            )
+
+            self.emergency_stop_subscriber = self.node.create_subscription(
+                Bool,
+                f'servo42c/servo_{self.id}/emergency_stop',
+                self._emergency_stop_callback,
+                1
+            )
+
             self.publish_status()
+            self.logger.info(f'Successfully initialized servo {self.id}')
             return True
 
         except Exception as e:
-            self.logger.error(
-                f'Failed to initialize servo {self.id}: {str(e)}')
+            self.logger.error(f'Failed to initialize servo {self.id}: {str(e)}')
             return False
 
     def rotate(self, angle: float, speed: int = 120) -> bool:
@@ -142,17 +150,20 @@ class Servo:
         """Clean up ROS2 resources"""
         try:
             # Stop any ongoing movement
-            self.stop()
+            if self.is_enabled:
+                self.stop()
 
-            # Destroy publishers and subscribers
-            self.position_publisher.destroy()
-            self.command_subscriber.destroy()
-            self.emergency_stop_subscriber.destroy()
+            # Only destroy if publishers/subscribers were created
+            if self.position_publisher:
+                self.position_publisher.destroy()
+            if self.command_subscriber:
+                self.command_subscriber.destroy()
+            if self.emergency_stop_subscriber:
+                self.emergency_stop_subscriber.destroy()
 
             self.logger.info(f'Cleaned up resources for servo {self.id}')
         except Exception as e:
-            self.logger.error(
-                f'Error during cleanup for servo {self.id}: {str(e)}')
+            self.logger.error(f'Error during cleanup for servo {self.id}: {str(e)}')
 
     def __del__(self):
         """Destructor to ensure cleanup"""
