@@ -6,6 +6,7 @@ GET_PULSES = 0x33
 GET_SERIAL_ENABLED = 0xf3
 ROTATE = 0xfd
 STOP = 0xf7
+SET_MSTEPS = 0x84
 
 ID_BYTE = 0xe0
 
@@ -40,6 +41,10 @@ class Servo42CProtocol:
         if value & 0x80000000:  # If highest bit is set (negative)
             value = -((~value & 0xFFFFFFFF) + 1)
         return value
+    
+    def set_msteps(self, id: int, msteps: int) -> bool:
+        """Set microsteps per revolution"""
+        return self.send_command(id, [SET_MSTEPS, msteps], 1) == [1]
 
     def rotate(self, id: int, speed: int, pulses: int) -> bool:
         """Rotate servo by specified number of pulses at given speed"""

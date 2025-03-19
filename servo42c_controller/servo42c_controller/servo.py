@@ -16,6 +16,29 @@ MIN_ANGLE = radians(-360.0)  # -2π radians
 MAX_ANGLE = radians(360.0)   # 2π radians
 POSITION_TOLERANCE = radians(0.5)  # ~0.00873 radians
 
+SPEED_MAP = {
+    5:  0x09,
+    10: 0x4B,
+    15: 0x62,
+    20: 0x65,
+    25: 0x69,
+    30: 0x6E,
+    35: 0x71,
+    40: 0x72,
+    50: 0x75,
+    75: 0x79,
+    100: 0x7A,
+    150: 0x7C,
+    200: 0x7D,
+    250: 0x7D,
+    300: 0x7D,
+    350: 0x7D,
+    400: 0x7E,
+}
+
+def get_xx_for_rpm(target_rpm):
+    nearest_rpm = min(SPEED_MAP.keys(), key=lambda x: abs(x - target_rpm))
+    return nearest_rpm, SPEED_MAP[nearest_rpm]
 
 class Servo:
     """Class representing a single servo motor"""
@@ -48,11 +71,14 @@ class Servo:
         self.pulses_per_rotation = steps_per_rev * microstep_factor * gear_ratio
         self.is_enabled = False
         self.node = node  # Store node reference
+        self.microstep_factor = microstep_factor
         
         # Don't create publishers/subscribers yet
         self.position_publisher = None
         self.command_subscriber = None
         self.emergency_stop_subscriber = None
+        self.speed_subscriber = None
+        self.current_speed = 120  # Default speed in internal units
 
     def angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
@@ -69,6 +95,9 @@ class Servo:
                 return False
             
             self.is_enabled = True
+
+            # Set microsteps per revolution
+            self.protocol.set_msteps(self.id, self.microstep_factor)
 
             # Get initial position
             self.current_pulses = self.protocol.get_pulses(self.id)
@@ -95,6 +124,13 @@ class Servo:
                 1
             )
 
+            self.speed_subscriber = self.node.create_subscription(
+                Float32,
+                f'servo42c/servo_{self.id}/set_speed',
+                self._speed_callback,
+                10
+            )
+
             self.publish_status()
             self.logger.info(f'Successfully initialized servo {self.id}')
             return True
@@ -103,7 +139,7 @@ class Servo:
             self.logger.error(f'Failed to initialize servo {self.id}: {str(e)}')
             return False
 
-    def rotate(self, angle: float, speed: int = 120) -> bool:
+    def rotate(self, angle: float, speed: int) -> bool:
         """Rotate servo to specified angle"""
         if not self.is_enabled:
             self.logger.warn(f'Servo {self.id} is currently disabled')
@@ -160,6 +196,8 @@ class Servo:
                 self.command_subscriber.destroy()
             if self.emergency_stop_subscriber:
                 self.emergency_stop_subscriber.destroy()
+            if self.speed_subscriber:
+                self.speed_subscriber.destroy()
 
             self.logger.info(f'Cleaned up resources for servo {self.id}')
         except Exception as e:
@@ -195,7 +233,8 @@ class Servo:
     def _command_angle_callback(self, msg: Float32) -> None:
         """Handle command angle messages (in radians)"""
         try:
-            self.rotate(msg.data)
+            angle = msg.data
+            self.rotate(angle, self.current_speed)
         except Exception as e:
             self.logger.error(
                 f'Failed to handle command angle for servo {self.id}: {str(e)}')
@@ -214,3 +253,17 @@ class Servo:
         except Exception as e:
             self.logger.error(
                 f'Failed to handle emergency stop for servo {self.id}: {str(e)}')
+
+    def _speed_callback(self, msg: Float32) -> None:
+        """Handle speed command messages"""
+        try:
+            speed = int(msg.data)  # Convert float to int for internal speed units
+            if self.min_speed <= speed <= self.max_speed:
+                self.current_speed = speed
+                self.logger.info(f'Speed updated for servo {self.id}: {speed}')
+            else:
+                self.logger.error(
+                    f'Speed {speed} out of bounds for servo {self.id} (min: {self.min_speed}, max: {self.max_speed})')
+        except Exception as e:
+            self.logger.error(
+                f'Failed to handle speed update for servo {self.id}: {str(e)}')

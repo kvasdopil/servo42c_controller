@@ -49,7 +49,8 @@ class ServoControllerNode(Node):
                               logger=self.get_logger(),
                               min_angle=self.get_parameter('min_angle').value,
                               max_angle=self.get_parameter('max_angle').value,
-                              position_tolerance=self.get_parameter('position_tolerance').value)
+                              position_tolerance=self.get_parameter('position_tolerance').value,
+                              microstep_factor=8)
                 if servo.initialize():
                     self.servos[servo_id] = servo
                     self.get_logger().info(
