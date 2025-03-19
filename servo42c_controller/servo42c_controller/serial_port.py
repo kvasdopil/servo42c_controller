@@ -20,11 +20,6 @@ class SerialPort:
         self.serial_port: Optional[serial.Serial] = None
         self.serial_lock = threading.Lock()
 
-    def log(self, level: str, msg: str):
-        """Log message if logger is available"""
-        if self.logger:
-            getattr(self.logger, level)(msg)
-
     def connect(self) -> bool:
         """Establish serial connection with retries"""
         for attempt in range(self.max_attempts):
@@ -38,22 +33,23 @@ class SerialPort:
                     timeout=self.timeout,
                     write_timeout=self.timeout
                 )
-                self.log('info', f'Connected to /dev/{self.device}')
+                self.logger.info(f'Connected to /dev/{self.device}')
                 return True
             except serial.SerialException as e:
-                self.log(
-                    'error', f'Attempt {attempt + 1}/{self.max_attempts} failed: {str(e)}')
+                self.logger.error(
+                    f'Attempt {attempt + 1}/{self.max_attempts} failed: {str(e)}')
                 if attempt < self.max_attempts - 1:
-                    self.log('info', 'Retrying in 1 second...')
+                    self.logger.info('Retrying in 1 second...')
                     rclpy.sleep(1.0)
 
-        self.log('error', 'Failed to establish serial connection')
+        self.logger.error('Failed to establish serial connection')
         return False
 
     def ensure_connection(self) -> bool:
         """Ensure serial connection is active"""
         if self.serial_port is None or not self.serial_port.is_open:
-            self.log('warn', 'Serial connection lost, attempting to reconnect...')
+            self.logger.warn(
+                'Serial connection lost, attempting to reconnect...')
             return self.connect()
         return True
 
@@ -67,7 +63,8 @@ class SerialPort:
                 self.serial_port.write(data)
                 self.serial_port.flush()
             except serial.SerialException as e:
-                self.log('error', f'Failed to write to serial port: {str(e)}')
+                self.logger.error(
+                    f'Failed to write to serial port: {str(e)}')
                 raise
 
     def read(self, num_bytes: int) -> bytes:
@@ -82,10 +79,12 @@ class SerialPort:
                     raise RuntimeError('Timeout reading from serial port')
                 return data
             except serial.SerialException as e:
-                self.log('error', f'Failed to read from serial port: {str(e)}')
+                self.logger.error(
+                    f'Failed to read from serial port: {str(e)}')
                 raise
 
     def close(self) -> None:
         """Close serial connection"""
         if self.serial_port and self.serial_port.is_open:
             self.serial_port.close()
+            self.logger.info('Serial connection closed')

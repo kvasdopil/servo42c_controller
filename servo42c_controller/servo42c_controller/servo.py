@@ -71,11 +71,6 @@ class Servo:
             1  # Higher priority QoS
         )
 
-    def log(self, level: str, msg: str):
-        """Log message if logger is available"""
-        if self.logger:
-            getattr(self.logger, level)(msg)
-
     def angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
         return round(angle_rad * self.pulses_per_rotation / (2 * pi))
@@ -96,24 +91,24 @@ class Servo:
             return True
 
         except Exception as e:
-            self.log(
-                'error', f'Failed to initialize servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to initialize servo {self.id}: {str(e)}')
             return False
 
     def rotate(self, angle: float, speed: int = 120) -> bool:
         """Rotate servo to specified angle"""
         if not self.is_enabled:
-            self.log('warn', f'Servo {self.id} is currently disabled')
+            self.logger.warn(f'Servo {self.id} is currently disabled')
             return False
 
         if not self.min_angle <= angle <= self.max_angle:
-            self.log(
-                'error', f'Angle {angle} out of bounds for servo {self.id}')
+            self.logger.error(
+                f'Angle {angle} out of bounds for servo {self.id}')
             return False
 
         if not self.min_speed <= speed <= self.max_speed:
-            self.log(
-                'error', f'Speed {speed} out of bounds for servo {self.id}')
+            self.logger.error(
+                f'Speed {speed} out of bounds for servo {self.id}')
             return False
 
         new_target_pulses = self.angle_to_pulses(angle)
@@ -126,10 +121,11 @@ class Servo:
         try:
             if self.protocol.rotate(self.id, speed, diff):
                 self.target_pulses = new_target_pulses
-                self.log('info', f'Moving servo {self.id} to angle: {angle}')
+                self.logger.info(f'Moving servo {self.id} to angle: {angle}')
                 return True
         except Exception as e:
-            self.log('error', f'Failed to rotate servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to rotate servo {self.id}: {str(e)}')
 
         return False
 
@@ -137,9 +133,10 @@ class Servo:
         """Stop servo movement"""
         try:
             self.protocol.stop(self.id)
-            self.log('info', f'Emergency stop sent to servo {self.id}')
+            self.logger.info(f'Emergency stop sent to servo {self.id}')
         except Exception as e:
-            self.log('error', f'Failed to stop servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to stop servo {self.id}: {str(e)}')
 
     def cleanup(self) -> None:
         """Clean up ROS2 resources"""
@@ -152,10 +149,10 @@ class Servo:
             self.command_subscriber.destroy()
             self.emergency_stop_subscriber.destroy()
 
-            self.log('info', f'Cleaned up resources for servo {self.id}')
+            self.logger.info(f'Cleaned up resources for servo {self.id}')
         except Exception as e:
-            self.log(
-                'error', f'Error during cleanup for servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Error during cleanup for servo {self.id}: {str(e)}')
 
     def __del__(self):
         """Destructor to ensure cleanup"""
@@ -171,8 +168,8 @@ class Servo:
             self.current_pulses = self.protocol.get_pulses(self.id)
             self.publish_status()
         except Exception as e:
-            self.log(
-                'error', f'Failed to update position for servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to update position for servo {self.id}: {str(e)}')
 
     def publish_status(self) -> None:
         """Publish current position"""
@@ -181,16 +178,16 @@ class Servo:
             position_msg.data = self.pulses_to_angle(self.current_pulses)
             self.position_publisher.publish(position_msg)
         except Exception as e:
-            self.log(
-                'error', f'Failed to publish status for servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to publish status for servo {self.id}: {str(e)}')
 
     def _command_angle_callback(self, msg: Float32) -> None:
         """Handle command angle messages (in radians)"""
         try:
             self.rotate(msg.data)
         except Exception as e:
-            self.log(
-                'error', f'Failed to handle command angle for servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to handle command angle for servo {self.id}: {str(e)}')
 
     def _emergency_stop_callback(self, msg: Bool) -> None:
         """Handle emergency stop messages"""
@@ -198,11 +195,11 @@ class Servo:
             if msg.data:  # If True, trigger emergency stop
                 self.stop()
                 self.is_enabled = False
-                self.log(
-                    'warn', f'Emergency stop triggered for servo {self.id}')
+                self.logger.warn(
+                    f'Emergency stop triggered for servo {self.id}')
             else:  # If False, re-enable the servo
                 self.is_enabled = True
-                self.log('info', f'Servo {self.id} re-enabled')
+                self.logger.info(f'Servo {self.id} re-enabled')
         except Exception as e:
-            self.log(
-                'error', f'Failed to handle emergency stop for servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to handle emergency stop for servo {self.id}: {str(e)}')

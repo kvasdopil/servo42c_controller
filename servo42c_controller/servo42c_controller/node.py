@@ -99,16 +99,21 @@ class ServoControllerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = None
+    shutdown_flag = False
 
     try:
         node = ServoControllerNode()
 
         def signal_handler(sig, frame):
             """Handle shutdown signals"""
-            nonlocal node
-            if node:
+            nonlocal node, shutdown_flag
+            if node and not shutdown_flag:
+                shutdown_flag = True
                 node.get_logger().info('Shutdown signal received, cleaning up...')
                 node.cleanup()
+                node.destroy_node()
+                rclpy.shutdown()
+                sys.exit(0)
 
         import signal
         signal.signal(signal.SIGINT, signal_handler)
@@ -116,18 +121,16 @@ def main(args=None):
 
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        if node and not shutdown_flag:
+            node.get_logger().info('KeyboardInterrupt received, cleaning up...')
+            node.cleanup()
+            node.destroy_node()
     finally:
-        if node:
+        if not shutdown_flag:
             try:
-                node.cleanup()
-                node.destroy_node()
+                rclpy.shutdown()
             except Exception as e:
-                print(f'Error during node cleanup: {str(e)}', file=sys.stderr)
-        try:
-            rclpy.shutdown()
-        except Exception as e:
-            print(f'Error during ROS shutdown: {str(e)}', file=sys.stderr)
+                print(f'Error during ROS shutdown: {str(e)}', file=sys.stderr)
 
 
 if __name__ == '__main__':
