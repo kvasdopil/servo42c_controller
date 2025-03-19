@@ -128,6 +128,29 @@ class Servo:
         except Exception as e:
             self.log('error', f'Failed to stop servo {self.id}: {str(e)}')
 
+    def cleanup(self) -> None:
+        """Clean up ROS2 resources"""
+        try:
+            # Stop any ongoing movement
+            self.stop()
+
+            # Destroy publishers and subscribers
+            self.position_publisher.destroy()
+            self.command_subscriber.destroy()
+
+            self.log('info', f'Cleaned up resources for servo {self.id}')
+        except Exception as e:
+            self.log(
+                'error', f'Error during cleanup for servo {self.id}: {str(e)}')
+
+    def __del__(self):
+        """Destructor to ensure cleanup"""
+        try:
+            self.cleanup()
+        except Exception:
+            # Ignore errors during destructor
+            pass
+
     def update_position(self) -> None:
         """Update current position"""
         try:
