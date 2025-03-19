@@ -1,29 +1,51 @@
 from rclpy.node import Node
 from std_msgs.msg import Float32, Bool
-
+from logging import Logger
 from .protocol import Servo42CProtocol
 
 # Motor configuration
 STEPS_PER_REV = 200  # Base steps per revolution
 MICROSTEP_FACTOR = 8  # Microstepping factor
 GEAR_RATIO = 37      # Gear reduction ratio
-PULSES_PER_ROTATION = STEPS_PER_REV * MICROSTEP_FACTOR * GEAR_RATIO
 
+# defaults
 MAX_SPEED = 128
 MIN_SPEED = 1
+MIN_ANGLE = -360.0  # degrees
+MAX_ANGLE = 360.0   # degrees
+POSITION_TOLERANCE = 0.5  # degrees
 
 
 class Servo:
     """Class representing a single servo motor"""
 
-    def __init__(self, node: Node, protocol: Servo42CProtocol, servo_id: int):
+    def __init__(self,
+                 node: Node,
+                 protocol: Servo42CProtocol,
+                 servo_id: int,
+                 logger: Logger,
+                 min_angle: float = MIN_ANGLE,
+                 max_angle: float = MAX_ANGLE,
+                 position_tolerance: float = POSITION_TOLERANCE,
+                 max_speed: int = MAX_SPEED,
+                 min_speed: int = MIN_SPEED,
+                 steps_per_rev: int = STEPS_PER_REV,
+                 microstep_factor: int = MICROSTEP_FACTOR,
+                 gear_ratio: int = GEAR_RATIO
+                 ):
         """Initialize servo instance"""
-        self.node = node
         self.protocol = protocol
         self.id = servo_id
         self.current_pulses = 0
         self.target_pulses = 0
         self.at_target = True
+        self.logger = logger
+        self.min_angle = min_angle
+        self.max_angle = max_angle
+        self.position_tolerance = position_tolerance
+        self.max_speed = max_speed
+        self.min_speed = min_speed
+        self.pulses_per_rotation = steps_per_rev * microstep_factor * gear_ratio
 
         # Publishers
         self.angle_publisher = node.create_publisher(
@@ -45,25 +67,18 @@ class Servo:
             10
         )
 
-    @staticmethod
-    def angle_to_pulses(angle: float) -> int:
+    def log(self, level: str, msg: str):
+        """Log message if logger is available"""
+        if self.logger:
+            getattr(self.logger, level)(msg)
+
+    def angle_to_pulses(self, angle: float) -> int:
         """Convert angle in degrees to pulses"""
-        return round(angle * PULSES_PER_ROTATION / 360)
+        return round(angle * self.pulses_per_rotation / 360)
 
-    @staticmethod
-    def pulses_to_angle(pulses: int) -> float:
+    def pulses_to_angle(self, pulses: int) -> float:
         """Convert pulses to angle in degrees"""
-        return float(pulses) * 360.0 / PULSES_PER_ROTATION
-
-    def _validate_angle(self, angle: float) -> bool:
-        """Validate if angle is within allowed range"""
-        min_angle = self.node.get_parameter('min_angle').value
-        max_angle = self.node.get_parameter('max_angle').value
-        return min_angle <= angle <= max_angle
-
-    def _validate_speed(self, speed: int) -> bool:
-        """Validate if speed is within allowed range"""
-        return MIN_SPEED <= speed <= MAX_SPEED
+        return float(pulses) * 360.0 / self.pulses_per_rotation
 
     def initialize(self) -> bool:
         """Initialize servo and get current position"""
@@ -78,20 +93,20 @@ class Servo:
             return True
 
         except Exception as e:
-            self.node.get_logger().error(
-                f'Failed to initialize servo {self.id}: {str(e)}')
+            self.log(
+                'error', f'Failed to initialize servo {self.id}: {str(e)}')
             return False
 
     def rotate(self, angle: float, speed: int = 120) -> bool:
         """Rotate servo to specified angle"""
-        if not self._validate_angle(angle):
-            self.node.get_logger().error(
-                f'Angle {angle} out of bounds for servo {self.id}')
+        if not self.min_angle <= angle <= self.max_angle:
+            self.log(
+                'error', f'Angle {angle} out of bounds for servo {self.id}')
             return False
 
-        if not self._validate_speed(speed):
-            self.node.get_logger().error(
-                f'Speed {speed} out of bounds for servo {self.id}')
+        if not self.min_speed <= speed <= self.max_speed:
+            self.log(
+                'error', f'Speed {speed} out of bounds for servo {self.id}')
             return False
 
         new_target_pulses = self.angle_to_pulses(angle)
@@ -105,11 +120,13 @@ class Servo:
         self.at_target = False
         self.publish_status()
 
-        if self.protocol.rotate(self.id, speed, diff):
-            self.target_pulses = new_target_pulses
-            self.node.get_logger().info(
-                f'Moving servo {self.id} to angle: {angle}')
-            return True
+        try:
+            if self.protocol.rotate(self.id, speed, diff):
+                self.target_pulses = new_target_pulses
+                self.log('info', f'Moving servo {self.id} to angle: {angle}')
+                return True
+        except Exception as e:
+            self.log('error', f'Failed to rotate servo {self.id}: {str(e)}')
 
         # Reset status on failure
         self.at_target = True
@@ -120,11 +137,9 @@ class Servo:
         """Stop servo movement"""
         try:
             self.protocol.stop(self.id)
-            self.node.get_logger().info(
-                f'Emergency stop sent to servo {self.id}')
+            self.log('info', f'Emergency stop sent to servo {self.id}')
         except Exception as e:
-            self.node.get_logger().error(
-                f'Failed to stop servo {self.id}: {str(e)}')
+            self.log('error', f'Failed to stop servo {self.id}: {str(e)}')
 
     def update_position(self) -> None:
         """Update current position and check if target reached"""
@@ -133,22 +148,21 @@ class Servo:
             current_angle = self.pulses_to_angle(self.current_pulses)
 
             # Check if at target
-            tolerance = self.node.get_parameter('position_tolerance').value
             at_target = abs(
-                current_angle - self.pulses_to_angle(self.target_pulses)) <= tolerance
+                current_angle - self.pulses_to_angle(self.target_pulses)) <= self.position_tolerance
 
             # Publish updates if status changed
             if at_target != self.at_target:
                 self.at_target = at_target
                 if at_target:
-                    self.node.get_logger().info(
-                        f'Servo {self.id} reached target position')
+                    self.log(
+                        'info', f'Servo {self.id} reached target position')
 
             self.publish_status()
 
         except Exception as e:
-            self.node.get_logger().error(
-                f'Failed to update position for servo {self.id}: {str(e)}')
+            self.log(
+                'error', f'Failed to update position for servo {self.id}: {str(e)}')
 
     def publish_status(self) -> None:
         """Publish current angle and at-target status"""
@@ -164,13 +178,13 @@ class Servo:
             self.status_publisher.publish(status_msg)
 
         except Exception as e:
-            self.node.get_logger().error(
-                f'Failed to publish status for servo {self.id}: {str(e)}')
+            self.log(
+                'error', f'Failed to publish status for servo {self.id}: {str(e)}')
 
     def _target_angle_callback(self, msg: Float32) -> None:
         """Handle target angle messages"""
         try:
             self.rotate(msg.data)
         except Exception as e:
-            self.node.get_logger().error(
-                f'Failed to handle target angle for servo {self.id}: {str(e)}')
+            self.log(
+                'error', f'Failed to handle target angle for servo {self.id}: {str(e)}')

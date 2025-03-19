@@ -41,7 +41,13 @@ class ServoControllerNode(Node):
         # Enumerate and initialize servos
         for servo_id in range(10):  # Check IDs 0-9
             try:
-                servo = Servo(self, self.protocol, servo_id)
+                servo = Servo(self,
+                              protocol=self.protocol,
+                              servo_id=servo_id,
+                              logger=self.get_logger(),
+                              min_angle=self.get_parameter('min_angle').value,
+                              max_angle=self.get_parameter('max_angle').value,
+                              position_tolerance=self.get_parameter('position_tolerance').value)
                 if servo.initialize():
                     self.servos[servo_id] = servo
                     self.get_logger().info(
