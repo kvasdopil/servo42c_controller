@@ -63,7 +63,6 @@ class Servo:
         """Initialize servo instance"""
         self.protocol = protocol
         self.id = servo_id
-        self.current_pulses = 0
         self.target_pulses = 0
         self.logger = logger
         self.min_angle = min_angle
@@ -78,7 +77,6 @@ class Servo:
         self.name = name
 
         # Don't create publishers/subscribers yet
-        self.position_publisher = None
         self.command_subscriber = None
         self.emergency_stop_subscriber = None
         self.speed_subscriber = None
@@ -104,16 +102,9 @@ class Servo:
             self.protocol.set_msteps(self.id, self.microstep_factor)
 
             # Get initial position
-            self.current_pulses = self.protocol.get_pulses(self.id)
-            self.target_pulses = self.current_pulses
+            self.target_pulses = self.protocol.get_pulses(self.id)
 
-            # Only create publishers and subscribers if servo is found
-            self.position_publisher = self.node.create_publisher(
-                Float32,
-                f'servo42c/servo_{self.id}/position',
-                10
-            )
-
+            # Only create subscribers if servo is found
             self.command_subscriber = self.node.create_subscription(
                 Float32,
                 f'servo42c/servo_{self.id}/command',
@@ -135,7 +126,6 @@ class Servo:
                 10
             )
 
-            self.publish_status()
             self.logger.info(f'Successfully initialized servo {self.id}')
             return True
 
@@ -161,7 +151,7 @@ class Servo:
             return False
 
         new_target_pulses = self.angle_to_pulses(angle)
-        diff = new_target_pulses - self.current_pulses
+        diff = new_target_pulses - self.target_pulses
 
         # If no movement is needed, return success immediately
         if diff == 0:
@@ -194,9 +184,7 @@ class Servo:
             if self.is_enabled:
                 self.stop()
 
-            # Only destroy if publishers/subscribers were created
-            if self.position_publisher:
-                self.position_publisher.destroy()
+            # Only destroy if subscribers were created
             if self.command_subscriber:
                 self.command_subscriber.destroy()
             if self.emergency_stop_subscriber:
@@ -223,28 +211,7 @@ class Servo:
     
     def get_angle(self) -> float:
         """Get current angle"""
-        return self.pulses_to_angle(self.current_pulses)
-
-    # def update_position(self) -> None:
-    #     """Update current position"""
-    #     try:
-    #         # Check if there are any subscribers before publishing
-    #         if self.position_publisher.get_subscription_count() > 0:
-    #             self.current_pulses = self.protocol.get_pulses(self.id)
-    #             self.publish_status()
-    #     except Exception as e:
-    #         self.logger.error(
-    #             f'Failed to update position for servo {self.id}: {str(e)}')
-
-    def publish_status(self) -> None:
-        """Publish current position"""
-        try:
-            position_msg = Float32()
-            position_msg.data = self.pulses_to_angle(self.current_pulses)
-            self.position_publisher.publish(position_msg)
-        except Exception as e:
-            self.logger.error(
-                f'Failed to publish status for servo {self.id}: {str(e)}')
+        return self.pulses_to_angle(self.get_pulses())
 
     def _command_angle_callback(self, msg: Float32) -> None:
         """Handle command angle messages (in radians)"""
