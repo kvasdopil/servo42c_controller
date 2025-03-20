@@ -36,9 +36,11 @@ SPEED_MAP = {
     400: 0x7E,
 }
 
+
 def get_xx_for_rpm(target_rpm):
     nearest_rpm = min(SPEED_MAP.keys(), key=lambda x: abs(x - target_rpm))
     return nearest_rpm, SPEED_MAP[nearest_rpm]
+
 
 class Servo:
     """Class representing a single servo motor"""
@@ -72,7 +74,7 @@ class Servo:
         self.is_enabled = False
         self.node = node  # Store node reference
         self.microstep_factor = microstep_factor
-        
+
         # Don't create publishers/subscribers yet
         self.position_publisher = None
         self.command_subscriber = None
@@ -93,7 +95,7 @@ class Servo:
         try:
             if not self.protocol.get_serial_enabled(self.id):
                 return False
-            
+
             self.is_enabled = True
 
             # Set microsteps per revolution
@@ -136,7 +138,8 @@ class Servo:
             return True
 
         except Exception as e:
-            self.logger.error(f'Failed to initialize servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Failed to initialize servo {self.id}: {str(e)}')
             return False
 
     def rotate(self, angle: float, speed: int) -> bool:
@@ -201,7 +204,8 @@ class Servo:
 
             self.logger.info(f'Cleaned up resources for servo {self.id}')
         except Exception as e:
-            self.logger.error(f'Error during cleanup for servo {self.id}: {str(e)}')
+            self.logger.error(
+                f'Error during cleanup for servo {self.id}: {str(e)}')
 
     def __del__(self):
         """Destructor to ensure cleanup"""
@@ -214,8 +218,10 @@ class Servo:
     def update_position(self) -> None:
         """Update current position"""
         try:
-            self.current_pulses = self.protocol.get_pulses(self.id)
-            self.publish_status()
+            # Check if there are any subscribers before publishing
+            if self.position_publisher.get_subscription_count() > 0:
+                self.current_pulses = self.protocol.get_pulses(self.id)
+                self.publish_status()
         except Exception as e:
             self.logger.error(
                 f'Failed to update position for servo {self.id}: {str(e)}')
@@ -257,7 +263,8 @@ class Servo:
     def _speed_callback(self, msg: Float32) -> None:
         """Handle speed command messages"""
         try:
-            speed = int(msg.data)  # Convert float to int for internal speed units
+            # Convert float to int for internal speed units
+            speed = int(msg.data)
             if self.min_speed <= speed <= self.max_speed:
                 self.current_speed = speed
                 self.logger.info(f'Speed updated for servo {self.id}: {speed}')
