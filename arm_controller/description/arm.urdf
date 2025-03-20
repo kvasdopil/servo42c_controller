@@ -3,6 +3,7 @@
   <!-- Base Link -->
   <link name="base">
     <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
         <cylinder length=".5" radius="2"/>
       </geometry>
@@ -10,11 +11,23 @@
         <color rgba="0.2 0.2 0.2 1"/>
       </material>
     </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder length=".5" radius="2"/>
+      </geometry>
+    </collision>
   </link>
 
   <!-- First Link -->
   <link name="shoulder">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
     <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
         <box size="1 1 1"/>
       </geometry>
@@ -22,18 +35,60 @@
         <color rgba="0 0 0.8 1"/>
       </material>
     </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 1 1"/>
+      </geometry>
+    </collision>
   </link>
 
   <!-- Second Link -->
   <link name="elbow">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+    </inertial>
     <visual>
+      <origin xyz="0 0 1" rpy="0 0 0"/>
       <geometry>
-        <box size="1 1 5"/>
+        <box size="1 1 3"/>
       </geometry>
       <material name="red">
         <color rgba="0.8 0 0 1"/>
       </material>
     </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 1 5"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Third Link (Wrist) -->
+  <link name="wrist">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.05" ixy="0.0" ixz="0.0" iyy="0.05" iyz="0.0" izz="0.05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.5 0.5 2"/>
+      </geometry>
+      <material name="green">
+        <color rgba="0 0.8 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.5 0.5 2"/>
+      </geometry>
+    </collision>
   </link>
 
   <!-- First Joint -->
@@ -52,5 +107,14 @@
     <origin xyz="1 0 0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
     <limit lower="-3.14" upper="3.14" effort="100" velocity="1"/>
+  </joint>
+
+  <!-- Third Joint (Wrist) -->
+  <joint name="joint2" type="revolute">
+    <parent link="elbow"/>
+    <child link="wrist"/>
+    <origin xyz="0 0 5" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="50" velocity="1"/>
   </joint>
 </robot>
