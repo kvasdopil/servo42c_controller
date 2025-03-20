@@ -182,28 +182,33 @@ class Servo:
         try:
             # Stop any ongoing movement
             if self.is_enabled:
-                self.stop()
+                try:
+                    self.protocol.stop(self.id)
+                except Exception:
+                    # Ignore protocol errors during shutdown
+                    pass
+                self.is_enabled = False
 
-            # Only destroy if subscribers were created
-            if self.command_subscriber:
-                self.command_subscriber.destroy()
-            if self.emergency_stop_subscriber:
-                self.emergency_stop_subscriber.destroy()
-            if self.speed_subscriber:
-                self.speed_subscriber.destroy()
+            # Destroy subscribers without logging
+            for sub in [self.command_subscriber, 
+                       self.emergency_stop_subscriber, 
+                       self.speed_subscriber]:
+                if sub is not None:
+                    try:
+                        sub.destroy()
+                    except Exception:
+                        pass  # Ignore destruction errors during shutdown
 
-            self.logger.info(f'Cleaned up resources for servo {self.id}')
-        except Exception as e:
-            self.logger.error(
-                f'Error during cleanup for servo {self.id}: {str(e)}')
+        except Exception:
+            # Don't log during cleanup as node might be shutting down
+            pass
 
     def __del__(self):
         """Destructor to ensure cleanup"""
         try:
             self.cleanup()
         except Exception:
-            # Ignore errors during destructor
-            pass
+            pass  # Ignore all errors during destruction
 
     def get_pulses(self) -> int:
         """Get current pulses"""

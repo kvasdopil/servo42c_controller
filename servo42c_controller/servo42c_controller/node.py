@@ -175,12 +175,22 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        print(f'Error: {str(e)}', file=sys.stderr)
     finally:
-        if node is not None:
-            node.get_logger().info('Shutting down...')
-            node.cleanup()  # This will stop servos and close serial port
-            node.destroy_node()
-        rclpy.shutdown()
+        try:
+            if node is not None:
+                # Stop publishing and receiving messages
+                node.destroy_node()
+                # Now it's safe to do cleanup that might log
+                node.cleanup()
+        except Exception as e:
+            print(f'Error during shutdown: {str(e)}', file=sys.stderr)
+        finally:
+            try:
+                rclpy.try_shutdown()
+            except Exception:
+                pass  # Ignore shutdown errors
 
 
 if __name__ == '__main__':
