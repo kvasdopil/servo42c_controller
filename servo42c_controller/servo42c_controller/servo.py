@@ -93,6 +93,7 @@ class Servo:
     def initialize(self) -> bool:
         """Initialize servo and get current position"""
         try:
+            self.logger.info(f'Initializing servo {self.id}')
             if not self.protocol.get_serial_enabled(self.id):
                 return False
 

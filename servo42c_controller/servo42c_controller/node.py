@@ -64,11 +64,11 @@ class ServoControllerNode(Node):
         self.joint_state_msg = JointState()
 
         # Enumerate and initialize servos
-        for servo_id in range(MAX_SERVOS):  # Check IDs 0-9
+        for servo_id in range(MAX_SERVOS):  # Cycle through all servos
             try:
                 servo = Servo(self,
                               protocol=self.protocol,
-                              name=self.get_parameter(f'servo{servo_id}_name').value,
+                              name=self.get_parameter(f'servo.{servo_id}.name').value,
                               servo_id=servo_id,
                               logger=self.get_logger(),
                               min_angle=self.get_parameter('min_angle').value,
@@ -78,10 +78,12 @@ class ServoControllerNode(Node):
                 if servo.initialize():
                     self.servos.append(servo)
                     self.get_logger().info(
-                        f'Found servo with ID {servo_id} and name {servo.name} at position {servo.current_pulses} pulses')
+                        f'Found servo with ID {servo_id} and name {servo.name} at position {servo.target_pulses} pulses')
+                else:
+                    continue
             except Exception as e:
-                self.get_logger().debug(
-                    f'No servo found at ID {servo_id}: {str(e)}')
+                self.get_logger().error(
+                    f'Unable to initialize servo {servo_id}: {str(e)}')
 
         # Pre-allocate arrays for namem position, velocity, and effort
         num_joints = len(self.servos)

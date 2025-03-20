@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot name="two_joint_arm">
   <!-- Base Link -->
-  <link name="base_link">
+  <link name="base">
     <visual>
       <geometry>
         <cylinder length=".5" radius="2"/>
@@ -13,7 +13,7 @@
   </link>
 
   <!-- First Link -->
-  <link name="link1">
+  <link name="shoulder">
     <visual>
       <geometry>
         <box size="1 1 1"/>
@@ -25,7 +25,7 @@
   </link>
 
   <!-- Second Link -->
-  <link name="link2">
+  <link name="elbow">
     <visual>
       <geometry>
         <box size="1 1 5"/>
@@ -37,18 +37,18 @@
   </link>
 
   <!-- First Joint -->
-  <joint name="joint1" type="revolute">
-    <parent link="base_link"/>
-    <child link="link1"/>
+  <joint name="joint0" type="revolute">
+    <parent link="base"/>
+    <child link="shoulder"/>
     <origin xyz="0 0 1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-3.14" upper="3.14" effort="100" velocity="1"/>
   </joint>
 
   <!-- Second Joint -->
-  <joint name="joint2" type="revolute">
-    <parent link="link1"/>
-    <child link="link2"/>
+  <joint name="joint1" type="revolute">
+    <parent link="shoulder"/>
+    <child link="elbow"/>
     <origin xyz="1 0 0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
     <limit lower="-3.14" upper="3.14" effort="100" velocity="1"/>
