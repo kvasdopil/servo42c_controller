@@ -57,7 +57,8 @@ class Servo:
                  min_speed: int = MIN_SPEED,
                  steps_per_rev: int = STEPS_PER_REV,
                  microstep_factor: int = MICROSTEP_FACTOR,
-                 gear_ratio: int = GEAR_RATIO
+                 gear_ratio: int = GEAR_RATIO,
+                 name: str = None 
                  ):
         """Initialize servo instance"""
         self.protocol = protocol
@@ -74,6 +75,7 @@ class Servo:
         self.is_enabled = False
         self.node = node  # Store node reference
         self.microstep_factor = microstep_factor
+        self.name = name
 
         # Don't create publishers/subscribers yet
         self.position_publisher = None
@@ -215,16 +217,24 @@ class Servo:
             # Ignore errors during destructor
             pass
 
-    def update_position(self) -> None:
-        """Update current position"""
-        try:
-            # Check if there are any subscribers before publishing
-            if self.position_publisher.get_subscription_count() > 0:
-                self.current_pulses = self.protocol.get_pulses(self.id)
-                self.publish_status()
-        except Exception as e:
-            self.logger.error(
-                f'Failed to update position for servo {self.id}: {str(e)}')
+    def get_pulses(self) -> int:
+        """Get current pulses"""
+        return self.protocol.get_pulses(self.id)
+    
+    def get_angle(self) -> float:
+        """Get current angle"""
+        return self.pulses_to_angle(self.current_pulses)
+
+    # def update_position(self) -> None:
+    #     """Update current position"""
+    #     try:
+    #         # Check if there are any subscribers before publishing
+    #         if self.position_publisher.get_subscription_count() > 0:
+    #             self.current_pulses = self.protocol.get_pulses(self.id)
+    #             self.publish_status()
+    #     except Exception as e:
+    #         self.logger.error(
+    #             f'Failed to update position for servo {self.id}: {str(e)}')
 
     def publish_status(self) -> None:
         """Publish current position"""
