@@ -7,12 +7,13 @@ import re
 from .protocol import Servo42CProtocol
 from .servo import Servo
 from rcl_interfaces.msg import ParameterDescriptor
+from sensor_msgs.msg import JointState
 
 
 # Limits and safety
 MIN_ANGLE = -360.0  # degrees
 MAX_ANGLE = 360.0   # degrees
-MAX_SERVOS = 16
+MAX_SERVOS = 4
 UPDATE_RATE = 0.1  # seconds
 
 class ServoControllerNode(Node):
@@ -47,6 +48,22 @@ class ServoControllerNode(Node):
 
         # Store active servos
         self.servos: List[Servo] = []
+        # Map joint names to servo objects for quick lookup
+        self.servo_map: Dict[str, Servo] = {}
+
+        # Create publishers and subscribers for topic-based control
+        self.joint_state_pub = self.create_publisher(
+            JointState,
+            '/servo/states',
+            10
+        )
+        
+        self.joint_command_sub = self.create_subscription(
+            JointState,
+            '/servo/commands',
+            self._joint_command_callback,
+            10
+        )
 
         # Enumerate and initialize servos
         for servo_id in range(MAX_SERVOS):  # Cycle through all servos
@@ -62,6 +79,7 @@ class ServoControllerNode(Node):
                               microstep_factor=8)
                 if servo.initialize():
                     self.servos.append(servo)
+                    self.servo_map[servo.name] = servo
                     self.get_logger().info(
                         f'Found servo with ID {servo_id} and name {servo.name} at position {servo.target_pulses} pulses')
                 else:
@@ -77,10 +95,46 @@ class ServoControllerNode(Node):
         self.get_logger().info(
             f'Servo controller node initialized with {len(self.servos)} servos')
 
+    def _joint_command_callback(self, msg: JointState) -> None:
+        """Handle joint command messages for all servos"""
+        try:
+            # Process each joint in the command message
+            for i, joint_name in enumerate(msg.name):
+                if joint_name in self.servo_map:
+                    servo = self.servo_map[joint_name]
+                    try:
+                        target_position = msg.position[i]
+                        servo.rotate(target_position, servo.current_speed)
+                    except Exception as e:
+                        self.get_logger().error(f'Failed to handle command for servo {servo.id}: {str(e)}')
+                else:
+                    self.get_logger().warn(f'Received command for unknown joint: {joint_name}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to handle joint command message: {str(e)}')
+
     def update_servo_states(self) -> None:
         """Update and publish states for all servos"""
-        for servo in self.servos:
-            servo.publish_state()
+        try:
+            msg = JointState()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.name = []
+            msg.position = []
+            msg.velocity = []
+            msg.effort = []
+
+            for servo in self.servos:
+                try:
+                    current_position = servo.get_angle()
+                    msg.name.append(servo.name)
+                    msg.position.append(current_position)
+                    msg.velocity.append(0.0)  # We don't have velocity feedback
+                    msg.effort.append(0.0)    # We don't have effort feedback
+                except Exception as e:
+                    self.get_logger().error(f'Failed to get state for servo {servo.id}: {str(e)}')
+
+            self.joint_state_pub.publish(msg)
+        except Exception as e:
+            self.get_logger().error(f'Failed to publish joint states: {str(e)}')
 
     def cleanup(self):
         """Clean up resources before shutdown"""

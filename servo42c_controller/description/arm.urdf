@@ -95,6 +95,8 @@
   <ros2_control name="ArmSystem" type="system">
     <hardware>
       <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+      <param name="joint_commands_topic">/servo/commands</param>
+      <param name="joint_states_topic">/servo/states</param>
     </hardware>
     <joint name="joint0">
       <command_interface name="position"/>

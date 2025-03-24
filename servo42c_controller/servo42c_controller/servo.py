@@ -1,5 +1,4 @@
 from rclpy.node import Node
-from std_msgs.msg import Float32, Bool
 from logging import Logger
 from math import pi, radians
 from .protocol import Servo42CProtocol
@@ -76,38 +75,6 @@ class Servo:
         self.microstep_factor = microstep_factor
         self.name = name
         self.current_speed = 120  # Default speed in internal units
-        
-        # Create publishers and subscribers for topic-based control
-        self.position_state_pub = self.node.create_publisher(
-            Float32,
-            f'{self.name}/position/state',
-            10
-        )
-        
-        self.position_cmd_sub = self.node.create_subscription(
-            Float32,
-            f'{self.name}/position/command',
-            self._position_command_callback,
-            10
-        )
-
-    def _position_command_callback(self, msg: Float32) -> None:
-        """Handle position command messages"""
-        try:
-            target_position = msg.data
-            self.rotate(target_position, self.current_speed)
-        except Exception as e:
-            self.logger.error(f'Failed to handle position command for servo {self.id}: {str(e)}')
-
-    def publish_state(self) -> None:
-        """Publish current position state - called by the node's timer"""
-        try:
-            current_position = self.get_angle()
-            msg = Float32()
-            msg.data = current_position
-            self.position_state_pub.publish(msg)
-        except Exception as e:
-            self.logger.error(f'Failed to publish state for servo {self.id}: {str(e)}')
 
     def angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
@@ -193,12 +160,6 @@ class Servo:
                 except Exception:
                     pass
                 self.is_enabled = False
-
-            # Clean up ROS resources
-            if hasattr(self, 'position_state_pub'):
-                self.position_state_pub.destroy()
-            if hasattr(self, 'position_cmd_sub'):
-                self.position_cmd_sub.destroy()
 
         except Exception:
             pass
