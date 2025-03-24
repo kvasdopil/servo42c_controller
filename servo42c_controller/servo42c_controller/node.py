@@ -7,6 +7,7 @@ import re
 from .protocol import Servo42CProtocol
 from .servo import Servo
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64MultiArray
 from typing import List, Optional
 from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
 
@@ -54,6 +55,14 @@ class ServoControllerNode(Node):
 
         # Create JointState publisher
         self.joint_state_pub = self.create_publisher(JointState, 'joint_states', 10)
+
+        # Create subscription to arm position commands
+        self.arm_position_sub = self.create_subscription(
+            Float64MultiArray,
+            '/arm_position_controller/commands',
+            self._arm_position_callback,
+            10
+        )
 
         # Initialize JointState message with fixed fields
         self.joint_state_msg = JointState()
@@ -121,6 +130,20 @@ class ServoControllerNode(Node):
            
         return SetParametersResult(successful=True)
 
+    def _arm_position_callback(self, msg: Float64MultiArray) -> None:
+        """Handle arm position commands for all servos"""
+        if len(msg.data) != len(self.servos):
+            self.get_logger().error(
+                f'Received {len(msg.data)} positions but have {len(self.servos)} servos')
+            return
+
+        for i, angle in enumerate(msg.data):
+            try:
+                # Convert angle to radians if needed (assuming input is in radians)
+                self.servos[i].rotate(angle, self.servos[i].current_speed)
+            except Exception as e:
+                self.get_logger().error(
+                    f'Failed to rotate servo {i} to angle {angle}: {str(e)}')
 
     def update_servos(self) -> None:
         """Update all servo positions and status and publish joint states"""
@@ -147,6 +170,14 @@ class ServoControllerNode(Node):
                 except Exception:
                     # Ignore errors during emergency stop
                     pass
+
+        # Clean up subscriptions
+        if hasattr(self, 'arm_position_sub'):
+            try:
+                self.arm_position_sub.destroy()
+            except Exception:
+                # Ignore errors during subscription cleanup
+                pass
 
         if hasattr(self, 'protocol'):
             try:

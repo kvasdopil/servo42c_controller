@@ -108,21 +108,21 @@ class Servo:
             # Only create subscribers if servo is found
             self.command_subscriber = self.node.create_subscription(
                 Float32,
-                f'servo42c/servo_{self.id}/command',
+                f'servo_{self.id}/command',
                 self._command_angle_callback,
                 10
             )
 
             self.emergency_stop_subscriber = self.node.create_subscription(
                 Bool,
-                f'servo42c/servo_{self.id}/emergency_stop',
+                f'servo_{self.id}/emergency_stop',
                 self._emergency_stop_callback,
                 1
             )
 
             self.speed_subscriber = self.node.create_subscription(
                 Float32,
-                f'servo42c/servo_{self.id}/set_speed',
+                f'servo_{self.id}/set_speed',
                 self._speed_callback,
                 10
             )
