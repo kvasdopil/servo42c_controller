@@ -10,16 +10,11 @@ from sensor_msgs.msg import JointState
 from typing import List, Optional
 from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
 
-# TODO add stop command
-# TODO add feedback for when servo is at target
-# TODO add speed control
-
 # Limits and safety
 MIN_ANGLE = -360.0  # degrees
 MAX_ANGLE = 360.0   # degrees
 MAX_SERVOS = 16
 UPDATE_RATE = 0.1  # seconds
-
 
 class ServoControllerNode(Node):
     def __init__(self):
