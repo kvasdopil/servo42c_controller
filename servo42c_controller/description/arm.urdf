@@ -91,6 +91,25 @@
     </collision>
   </link>
 
+  <!-- ros2_control configuration -->
+  <ros2_control name="ArmSystem" type="system">
+    <hardware>
+      <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+    </hardware>
+    <joint name="joint0">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="joint1">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="joint2">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+  </ros2_control>
+
   <!-- First Joint -->
   <joint name="joint0" type="revolute">
     <parent link="base"/>
