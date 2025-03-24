@@ -75,12 +75,39 @@ class Servo:
         self.node = node  # Store node reference
         self.microstep_factor = microstep_factor
         self.name = name
-
-        # Don't create publishers/subscribers yet
-        self.command_subscriber = None
-        self.emergency_stop_subscriber = None
-        self.speed_subscriber = None
         self.current_speed = 120  # Default speed in internal units
+        
+        # Create publishers and subscribers for topic-based control
+        self.position_state_pub = self.node.create_publisher(
+            Float32,
+            f'{self.name}/position/state',
+            10
+        )
+        
+        self.position_cmd_sub = self.node.create_subscription(
+            Float32,
+            f'{self.name}/position/command',
+            self._position_command_callback,
+            10
+        )
+
+    def _position_command_callback(self, msg: Float32) -> None:
+        """Handle position command messages"""
+        try:
+            target_position = msg.data
+            self.rotate(target_position, self.current_speed)
+        except Exception as e:
+            self.logger.error(f'Failed to handle position command for servo {self.id}: {str(e)}')
+
+    def publish_state(self) -> None:
+        """Publish current position state - called by the node's timer"""
+        try:
+            current_position = self.get_angle()
+            msg = Float32()
+            msg.data = current_position
+            self.position_state_pub.publish(msg)
+        except Exception as e:
+            self.logger.error(f'Failed to publish state for servo {self.id}: {str(e)}')
 
     def angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
@@ -104,28 +131,6 @@ class Servo:
 
             # Get initial position
             self.target_pulses = self.protocol.get_pulses(self.id)
-
-            # Only create subscribers if servo is found
-            self.command_subscriber = self.node.create_subscription(
-                Float32,
-                f'servo_{self.id}/command',
-                self._command_angle_callback,
-                10
-            )
-
-            self.emergency_stop_subscriber = self.node.create_subscription(
-                Bool,
-                f'servo_{self.id}/emergency_stop',
-                self._emergency_stop_callback,
-                1
-            )
-
-            self.speed_subscriber = self.node.create_subscription(
-                Float32,
-                f'servo_{self.id}/set_speed',
-                self._speed_callback,
-                10
-            )
 
             self.logger.info(f'Successfully initialized servo {self.id}')
             return True
@@ -179,29 +184,23 @@ class Servo:
                 f'Failed to stop servo {self.id}: {str(e)}')
 
     def cleanup(self) -> None:
-        """Clean up ROS2 resources"""
+        """Clean up resources"""
         try:
             # Stop any ongoing movement
             if self.is_enabled:
                 try:
                     self.protocol.stop(self.id)
                 except Exception:
-                    # Ignore protocol errors during shutdown
                     pass
                 self.is_enabled = False
 
-            # Destroy subscribers without logging
-            for sub in [self.command_subscriber, 
-                       self.emergency_stop_subscriber, 
-                       self.speed_subscriber]:
-                if sub is not None:
-                    try:
-                        sub.destroy()
-                    except Exception:
-                        pass  # Ignore destruction errors during shutdown
+            # Clean up ROS resources
+            if hasattr(self, 'position_state_pub'):
+                self.position_state_pub.destroy()
+            if hasattr(self, 'position_cmd_sub'):
+                self.position_cmd_sub.destroy()
 
         except Exception:
-            # Don't log during cleanup as node might be shutting down
             pass
 
     def __del__(self):
@@ -209,7 +208,7 @@ class Servo:
         try:
             self.cleanup()
         except Exception:
-            pass  # Ignore all errors during destruction
+            pass
 
     def get_pulses(self) -> int:
         """Get current pulses"""
@@ -217,43 +216,5 @@ class Servo:
     
     def get_angle(self) -> float:
         """Get current angle"""
-        return self.pulses_to_angle(self.get_pulses())
-
-    def _command_angle_callback(self, msg: Float32) -> None:
-        """Handle command angle messages (in radians)"""
-        try:
-            angle = msg.data
-            self.rotate(angle, self.current_speed)
-        except Exception as e:
-            self.logger.error(
-                f'Failed to handle command angle for servo {self.id}: {str(e)}')
-
-    def _emergency_stop_callback(self, msg: Bool) -> None:
-        """Handle emergency stop messages"""
-        try:
-            if msg.data:  # If True, trigger emergency stop
-                self.stop()
-                self.is_enabled = False
-                self.logger.warn(
-                    f'Emergency stop triggered for servo {self.id}')
-            else:  # If False, re-enable the servo
-                self.is_enabled = True
-                self.logger.info(f'Servo {self.id} re-enabled')
-        except Exception as e:
-            self.logger.error(
-                f'Failed to handle emergency stop for servo {self.id}: {str(e)}')
-
-    def _speed_callback(self, msg: Float32) -> None:
-        """Handle speed command messages"""
-        try:
-            # Convert float to int for internal speed units
-            speed = int(msg.data)
-            if self.min_speed <= speed <= self.max_speed:
-                self.current_speed = speed
-                self.logger.info(f'Speed updated for servo {self.id}: {speed}')
-            else:
-                self.logger.error(
-                    f'Speed {speed} out of bounds for servo {self.id} (min: {self.min_speed}, max: {self.max_speed})')
-        except Exception as e:
-            self.logger.error(
-                f'Failed to handle speed update for servo {self.id}: {str(e)}')
+        current_pulses = self.get_pulses()
+        return self.pulses_to_angle(current_pulses)

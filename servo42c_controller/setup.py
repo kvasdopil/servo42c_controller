@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             'servo42c_controller = servo42c_controller.node:main',
+            'test_trajectory = servo42c_controller.test_trajectory:main',
         ],
     },
 )

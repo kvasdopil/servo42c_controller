@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from typing import Dict
+from typing import Dict, List, Optional
 import sys
 import re
 from .protocol import Servo42CProtocol
 from .servo import Servo
-from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
-from typing import List, Optional
-from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
+from rcl_interfaces.msg import ParameterDescriptor
+
 
 # Limits and safety
 MIN_ANGLE = -360.0  # degrees
@@ -39,9 +37,6 @@ class ServoControllerNode(Node):
                 )
             )
 
-        # Add parameter callback
-        self.add_on_set_parameters_callback(self._on_parameter_change)
-
         # Initialize protocol
         device = self.get_parameter('device').value
         baud_rate = self.get_parameter('baud_rate').value
@@ -52,20 +47,6 @@ class ServoControllerNode(Node):
 
         # Store active servos
         self.servos: List[Servo] = []
-
-        # Create JointState publisher
-        self.joint_state_pub = self.create_publisher(JointState, 'joint_states', 10)
-
-        # Create subscription to arm position commands
-        self.arm_position_sub = self.create_subscription(
-            Float64MultiArray,
-            '/arm_position_controller/commands',
-            self._arm_position_callback,
-            10
-        )
-
-        # Initialize JointState message with fixed fields
-        self.joint_state_msg = JointState()
 
         # Enumerate and initialize servos
         for servo_id in range(MAX_SERVOS):  # Cycle through all servos
@@ -89,76 +70,17 @@ class ServoControllerNode(Node):
                 self.get_logger().error(
                     f'Unable to initialize servo {servo_id}: {str(e)}')
 
-        # Pre-allocate arrays for namem position, velocity, and effort
-        num_joints = len(self.servos)
-        self.joint_state_msg.name = [servo.name for servo in self.servos]
-        self.joint_state_msg.position = [0.0] * num_joints
-        self.joint_state_msg.velocity = [0.0] * num_joints
-        self.joint_state_msg.effort = [0.0] * num_joints
-
-        # Timer for updating servo positions and status
+        # Create timer for updating servo states
         update_rate = self.get_parameter('update_rate').value
-        self.create_timer(update_rate, self.update_servos)
+        self.create_timer(update_rate, self.update_servo_states)
 
         self.get_logger().info(
             f'Servo controller node initialized with {len(self.servos)} servos')
 
-    def _on_parameter_change(self, params) -> SetParametersResult:
-        """Handle parameter changes during runtime."""
-        servo_name_pattern = re.compile(r'^servo.(\d+).name$')
-        
-        for param in params:
-            # Check if this is a servo name parameter
-            match = servo_name_pattern.match(param.name)
-            if match:
-                try:
-                    servo_id = int(match.group(1))
-
-                    # find servo by id
-                    servo = self.servos.find(lambda x: x.id == servo_id)
-                    if servo is None:
-                        return SetParametersResult(successful=False, reason=f'Invalid servo ID in parameter: {param.name}')
-                    
-                    # check for duplcate names
-                    if any(s.name == param.value for s in self.servos):
-                        return SetParametersResult(successful=False, reason=f'Name already exists: {param.value}')
-
-                    servo.name = param.value # will update the joint_state_msg.name on next update_servos call
-
-                except ValueError:
-                    return SetParametersResult(successful=False, reason=f'Invalid servo ID in parameter: {param.name}')
-           
-        return SetParametersResult(successful=True)
-
-    def _arm_position_callback(self, msg: Float64MultiArray) -> None:
-        """Handle arm position commands for all servos"""
-        if len(msg.data) != len(self.servos):
-            self.get_logger().error(
-                f'Received {len(msg.data)} positions but have {len(self.servos)} servos')
-            return
-
-        for i, angle in enumerate(msg.data):
-            try:
-                # Convert angle to radians if needed (assuming input is in radians)
-                self.servos[i].rotate(angle, self.servos[i].current_speed)
-            except Exception as e:
-                self.get_logger().error(
-                    f'Failed to rotate servo {i} to angle {angle}: {str(e)}')
-
-    def update_servos(self) -> None:
-        """Update all servo positions and status and publish joint states"""
-        # Update timestamp
-        self.joint_state_msg.header.stamp = self.get_clock().now().to_msg()
-        
-        # Update positions using pre-computed indices
-        idx = 0
+    def update_servo_states(self) -> None:
+        """Update and publish states for all servos"""
         for servo in self.servos:
-            self.joint_state_msg.name[idx] = servo.name
-            self.joint_state_msg.position[idx] = servo.get_angle()
-            idx += 1
-        
-        # Publish the message
-        self.joint_state_pub.publish(self.joint_state_msg)
+            servo.publish_state()
 
     def cleanup(self):
         """Clean up resources before shutdown"""
@@ -171,14 +93,6 @@ class ServoControllerNode(Node):
                     # Ignore errors during emergency stop
                     pass
 
-        # Clean up subscriptions
-        if hasattr(self, 'arm_position_sub'):
-            try:
-                self.arm_position_sub.destroy()
-            except Exception:
-                # Ignore errors during subscription cleanup
-                pass
-
         if hasattr(self, 'protocol'):
             try:
                 self.protocol.close()
@@ -190,7 +104,6 @@ class ServoControllerNode(Node):
         try:
             self.cleanup()
         except Exception:
-            # Ignore errors during destructor
             pass
 
 
@@ -208,9 +121,7 @@ def main(args=None):
     finally:
         try:
             if node is not None:
-                # Stop publishing and receiving messages
                 node.destroy_node()
-                # Now it's safe to do cleanup that might log
                 node.cleanup()
         except Exception as e:
             print(f'Error during shutdown: {str(e)}', file=sys.stderr)
@@ -218,7 +129,7 @@ def main(args=None):
             try:
                 rclpy.try_shutdown()
             except Exception:
-                pass  # Ignore shutdown errors
+                pass
 
 
 if __name__ == '__main__':

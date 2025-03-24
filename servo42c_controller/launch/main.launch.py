@@ -29,15 +29,18 @@ def generate_launch_description():
             parameters=[urdf_file, controllers_file],
             output="screen"
         ),
-        # Node(
-        #     package="controller_manager",
-        #     executable="spawner",
-        #     arguments=["joint_state_broadcaster"],
-        # ),
+        # Joint state broadcaster must be started before trajectory controller
         Node(
             package="controller_manager",
             executable="spawner",
-            arguments=["arm_position_controller"],
+            arguments=["joint_state_broadcaster"],
+            output="screen",
+        ),
+        Node(
+            package="controller_manager",
+            executable="spawner",
+            arguments=["arm_trajectory_controller"],
+            output="screen",
         ),
         Node(
             package='robot_state_publisher',
