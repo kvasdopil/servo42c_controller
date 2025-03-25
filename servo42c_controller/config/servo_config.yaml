@@ -3,8 +3,6 @@ servo42c_controller:
   ros__parameters:
     device: "ttyUSB0"     # Serial device for the servo controller
     baud_rate: 9600       # Baud rate for serial communication
-    min_angle: -360.0     # Minimum angle in degrees
-    max_angle: 360.0      # Maximum angle in degrees
     position_tolerance: 0.5  # Position tolerance in degrees
     update_rate: 0.1      # Rate to update servo positions and publish joint states
 
@@ -12,7 +10,13 @@ servo42c_controller:
     servo:
       0:
         name: "joint0"    # Maps to joint0 in the URDF
+        min_angle: -180.0 # Minimum angle for joint0
+        max_angle: 180.0  # Maximum angle for joint0
       1:
         name: "joint1"    # Maps to joint1 in the URDF
+        min_angle: -90.0  # Minimum angle for joint1
+        max_angle: 90.0   # Maximum angle for joint1
       2:
-        name: "joint2"    # Maps to joint2 in the URDF 
+        name: "joint2"    # Maps to joint2 in the URDF
+        min_angle: -270.0 # Minimum angle for joint2
+        max_angle: 270.0  # Maximum angle for joint2 

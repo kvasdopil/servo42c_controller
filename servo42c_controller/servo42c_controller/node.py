@@ -30,18 +30,30 @@ class ServoControllerNode(Node):
         # Parameters
         self.declare_parameter('device', 'ttyUSB0')
         self.declare_parameter('baud_rate', 9600)
-        self.declare_parameter('min_angle', MIN_ANGLE)
-        self.declare_parameter('max_angle', MAX_ANGLE)
         self.declare_parameter('position_tolerance', 0.5)  # degrees
         self.declare_parameter('update_rate', UPDATE_RATE)
 
-        # Servo names
+        # Servo names and per-servo parameters
         for i in range(MAX_SERVOS):
             self.declare_parameter(
                 f'servo.{i}.name',
                 f'joint{i}',
                 ParameterDescriptor(
                     description=f'Name for servo {i} in joint_states message'
+                )
+            )
+            self.declare_parameter(
+                f'servo.{i}.min_angle',
+                MIN_ANGLE,
+                ParameterDescriptor(
+                    description=f'Minimum angle (degrees) for servo {i}'
+                )
+            )
+            self.declare_parameter(
+                f'servo.{i}.max_angle',
+                MAX_ANGLE,
+                ParameterDescriptor(
+                    description=f'Maximum angle (degrees) for servo {i}'
                 )
             )
 
@@ -113,8 +125,10 @@ class ServoControllerNode(Node):
                 name=self.get_parameter(f'servo.{servo_id}.name').value,
                 servo_id=servo_id,
                 logger=self.get_logger(),
-                min_angle=self.get_parameter('min_angle').value,
-                max_angle=self.get_parameter('max_angle').value,
+                min_angle=self.get_parameter(
+                    f'servo.{servo_id}.min_angle').value,
+                max_angle=self.get_parameter(
+                    f'servo.{servo_id}.max_angle').value,
                 position_tolerance=self.get_parameter(
                     'position_tolerance').value,
                 microstep_factor=8
@@ -126,8 +140,10 @@ class ServoControllerNode(Node):
                 name=self.get_parameter(f'servo.{servo_id}.name').value,
                 servo_id=servo_id,
                 logger=self.get_logger(),
-                min_angle=self.get_parameter('min_angle').value,
-                max_angle=self.get_parameter('max_angle').value,
+                min_angle=self.get_parameter(
+                    f'servo.{servo_id}.min_angle').value,
+                max_angle=self.get_parameter(
+                    f'servo.{servo_id}.max_angle').value,
                 position_tolerance=self.get_parameter(
                     'position_tolerance').value,
                 microstep_factor=8
