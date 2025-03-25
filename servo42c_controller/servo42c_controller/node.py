@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 import sys
 import re
 from .protocol import Servo42CProtocol
+from .simulated_servo import SimulatedServo
 from .servo import Servo
 from rcl_interfaces.msg import ParameterDescriptor
 from sensor_msgs.msg import JointState
@@ -21,6 +22,10 @@ UPDATE_RATE = 0.1  # seconds
 class ServoControllerNode(Node):
     def __init__(self):
         super().__init__('servo42c_controller')
+
+        # Add simulation parameter
+        self.declare_parameter('simulation', False)
+        self.simulation_mode = self.get_parameter('simulation').value
 
         # Parameters
         self.declare_parameter('device', 'ttyUSB0')
@@ -45,7 +50,8 @@ class ServoControllerNode(Node):
         baud_rate = self.get_parameter('baud_rate').value
         self.protocol = Servo42CProtocol(
             device, baud_rate, logger=self.get_logger())
-        if not self.protocol.connect():
+
+        if not self.simulation_mode and not self.protocol.connect():
             raise RuntimeError('Failed to initialize servo controller')
 
         # Store active servos
@@ -77,24 +83,14 @@ class ServoControllerNode(Node):
         self.is_e_stopped = False
 
         # Enumerate and initialize servos
-        for servo_id in range(MAX_SERVOS):  # Cycle through all servos
+        for servo_id in range(MAX_SERVOS):
             try:
-                servo = Servo(self,
-                              protocol=self.protocol,
-                              name=self.get_parameter(
-                                  f'servo.{servo_id}.name').value,
-                              servo_id=servo_id,
-                              logger=self.get_logger(),
-                              min_angle=self.get_parameter('min_angle').value,
-                              max_angle=self.get_parameter('max_angle').value,
-                              position_tolerance=self.get_parameter(
-                                  'position_tolerance').value,
-                              microstep_factor=8)
-                if servo.initialize():
+                servo = self._initialize_servo(servo_id)
+                if servo:
                     self.servos.append(servo)
                     self.servo_map[servo.name] = servo
                     self.get_logger().info(
-                        f'Found servo with ID {servo_id} and name {servo.name} at position {servo.target_pulses} pulses')
+                        f'Found servo with ID {servo_id} and name {servo.name}')
                 else:
                     continue
             except Exception as e:
@@ -107,6 +103,39 @@ class ServoControllerNode(Node):
 
         self.get_logger().info(
             f'Servo controller node initialized with {len(self.servos)} servos')
+
+    def _initialize_servo(self, servo_id: int) -> Optional[Servo]:
+        """Initialize either real or simulated servo"""
+        if self.simulation_mode:
+            servo = SimulatedServo(
+                self,
+                protocol=self.protocol,
+                name=self.get_parameter(f'servo.{servo_id}.name').value,
+                servo_id=servo_id,
+                logger=self.get_logger(),
+                min_angle=self.get_parameter('min_angle').value,
+                max_angle=self.get_parameter('max_angle').value,
+                position_tolerance=self.get_parameter(
+                    'position_tolerance').value,
+                microstep_factor=8
+            )
+        else:
+            servo = Servo(
+                self,
+                protocol=self.protocol,
+                name=self.get_parameter(f'servo.{servo_id}.name').value,
+                servo_id=servo_id,
+                logger=self.get_logger(),
+                min_angle=self.get_parameter('min_angle').value,
+                max_angle=self.get_parameter('max_angle').value,
+                position_tolerance=self.get_parameter(
+                    'position_tolerance').value,
+                microstep_factor=8
+            )
+
+        if servo.initialize():
+            return servo
+        return None
 
     def _emergency_stop_callback(self, msg: Bool) -> None:
         """Handle emergency stop messages"""

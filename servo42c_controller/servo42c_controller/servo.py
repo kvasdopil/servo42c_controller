@@ -57,7 +57,7 @@ class Servo:
                  steps_per_rev: int = STEPS_PER_REV,
                  microstep_factor: int = MICROSTEP_FACTOR,
                  gear_ratio: int = GEAR_RATIO,
-                 name: str = None 
+                 name: str = None
                  ):
         """Initialize servo instance"""
         self.protocol = protocol
@@ -76,11 +76,11 @@ class Servo:
         self.name = name
         self.current_speed = 120  # Default speed in internal units
 
-    def angle_to_pulses(self, angle_rad: float) -> int:
+    def _angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
         return round(angle_rad * self.pulses_per_rotation / (2 * pi))
 
-    def pulses_to_angle(self, pulses: int) -> float:
+    def _pulses_to_angle(self, pulses: int) -> float:
         """Convert pulses to angle in radians"""
         return float(pulses) * (2 * pi) / self.pulses_per_rotation
 
@@ -123,7 +123,7 @@ class Servo:
                 f'Speed {speed} out of bounds for servo {self.id}')
             return False
 
-        new_target_pulses = self.angle_to_pulses(angle)
+        new_target_pulses = self._angle_to_pulses(angle)
         diff = new_target_pulses - self.target_pulses
 
         # If no movement is needed, return success immediately
@@ -171,11 +171,7 @@ class Servo:
         except Exception:
             pass
 
-    def get_pulses(self) -> int:
-        """Get current pulses"""
-        return self.protocol.get_pulses(self.id)
-    
     def get_angle(self) -> float:
         """Get current angle"""
-        current_pulses = self.get_pulses()
-        return self.pulses_to_angle(current_pulses)
+        current_pulses = self.protocol.get_pulses(self.id)
+        return self._pulses_to_angle(current_pulses)
