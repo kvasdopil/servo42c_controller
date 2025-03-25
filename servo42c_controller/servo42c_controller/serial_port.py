@@ -1,6 +1,7 @@
 import serial
 import threading
 import rclpy
+import time
 from typing import Optional
 
 # default values
@@ -40,7 +41,7 @@ class SerialPort:
                     f'Attempt {attempt + 1}/{self.max_attempts} failed: {str(e)}')
                 if attempt < self.max_attempts - 1:
                     self.logger.info('Retrying in 1 second...')
-                    rclpy.sleep(1.0)
+                    time.sleep(1.0)
 
         self.logger.error('Failed to establish serial connection')
         return False

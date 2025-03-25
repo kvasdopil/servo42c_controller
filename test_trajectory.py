@@ -32,24 +32,24 @@ class TrajectoryTester(Node):
         
         # Point 1: Move to initial position
         point1 = JointTrajectoryPoint()
-        point1.positions = [0.0, 0.0, 0.0]  # radians
+        point1.positions = [1.0, 1.0, 0.0]  # radians
         point1.velocities = [0.0, 0.0, 0.0]
         point1.time_from_start = Duration(sec=2, nanosec=0)
         points.append(point1)
         
-        # Point 2: Move to new position
-        point2 = JointTrajectoryPoint()
-        point2.positions = [1.0, -0.1, -0.1]  # radians
-        point2.velocities = [0.0, 0.0, 0.0]
-        point2.time_from_start = Duration(sec=5, nanosec=0)
-        points.append(point2)
+        # # Point 2: Move to new position
+        # point2 = JointTrajectoryPoint()
+        # point2.positions = [1.0, -0.1, -0.1]  # radians
+        # point2.velocities = [0.0, 0.0, 0.0]
+        # point2.time_from_start = Duration(sec=5, nanosec=0)
+        # points.append(point2)
         
-        # Point 3: Return to initial position
-        point3 = JointTrajectoryPoint()
-        point3.positions = [0.0, 0.0, 0.0]  # radians
-        point3.velocities = [0.0, 0.0, 0.0]
-        point3.time_from_start = Duration(sec=7, nanosec=0)
-        points.append(point3)
+        # # Point 3: Return to initial position
+        # point3 = JointTrajectoryPoint()
+        # point3.positions = [0.0, 0.0, 0.0]  # radians
+        # point3.velocities = [0.0, 0.0, 0.0]
+        # point3.time_from_start = Duration(sec=7, nanosec=0)
+        # points.append(point3)
         
         goal.trajectory.points = points
         

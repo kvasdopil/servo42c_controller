@@ -111,12 +111,6 @@ class ServoControllerNode(Node):
     def _emergency_stop_callback(self, msg: Bool) -> None:
         """Handle emergency stop messages"""
         try:
-            if msg.data and self.is_e_stopped:
-                return
-
-            if not msg.data and self.is_e_stopped:
-                return
-
             stop = msg.data
             self.get_logger().warn(f"Emergency stop: {stop}")
 
@@ -140,18 +134,14 @@ class ServoControllerNode(Node):
     def _joint_command_callback(self, msg: JointState) -> None:
         """Handle joint command messages for all servos"""
         try:
-            # Ignore commands if e-stopped
-            if self.is_e_stopped:
-                self.get_logger().warn('Ignoring command due to active emergency stop')
-                return
-
             # Process each joint in the command message
             for i, joint_name in enumerate(msg.name):
                 if joint_name in self.servo_map:
                     servo = self.servo_map[joint_name]
                     try:
                         target_position = msg.position[i]
-                        servo.rotate(target_position, servo.current_speed)
+                        if not self.is_e_stopped:
+                            servo.rotate(target_position, servo.current_speed)
                     except Exception as e:
                         self.get_logger().error(
                             f'Failed to handle command for servo {servo.id}: {str(e)}')
