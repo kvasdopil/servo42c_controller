@@ -8,6 +8,7 @@ from .protocol import Servo42CProtocol
 from .servo import Servo
 from rcl_interfaces.msg import ParameterDescriptor
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 
 
 # Limits and safety
@@ -15,6 +16,7 @@ MIN_ANGLE = -360.0  # degrees
 MAX_ANGLE = 360.0   # degrees
 MAX_SERVOS = 4
 UPDATE_RATE = 0.1  # seconds
+
 
 class ServoControllerNode(Node):
     def __init__(self):
@@ -27,11 +29,11 @@ class ServoControllerNode(Node):
         self.declare_parameter('max_angle', MAX_ANGLE)
         self.declare_parameter('position_tolerance', 0.5)  # degrees
         self.declare_parameter('update_rate', UPDATE_RATE)
-        
+
         # Servo names
         for i in range(MAX_SERVOS):
             self.declare_parameter(
-                f'servo.{i}.name', 
+                f'servo.{i}.name',
                 f'joint{i}',
                 ParameterDescriptor(
                     description=f'Name for servo {i} in joint_states message'
@@ -57,7 +59,7 @@ class ServoControllerNode(Node):
             '/servo/states',
             10
         )
-        
+
         self.joint_command_sub = self.create_subscription(
             JointState,
             '/servo/commands',
@@ -65,17 +67,28 @@ class ServoControllerNode(Node):
             10
         )
 
+        # Emergency stop subscriber
+        self.e_stop_sub = self.create_subscription(
+            Bool,
+            '/e_stop',
+            self._emergency_stop_callback,
+            1  # Higher priority QoS
+        )
+        self.is_e_stopped = False
+
         # Enumerate and initialize servos
         for servo_id in range(MAX_SERVOS):  # Cycle through all servos
             try:
                 servo = Servo(self,
                               protocol=self.protocol,
-                              name=self.get_parameter(f'servo.{servo_id}.name').value,
+                              name=self.get_parameter(
+                                  f'servo.{servo_id}.name').value,
                               servo_id=servo_id,
                               logger=self.get_logger(),
                               min_angle=self.get_parameter('min_angle').value,
                               max_angle=self.get_parameter('max_angle').value,
-                              position_tolerance=self.get_parameter('position_tolerance').value,
+                              position_tolerance=self.get_parameter(
+                                  'position_tolerance').value,
                               microstep_factor=8)
                 if servo.initialize():
                     self.servos.append(servo)
@@ -95,9 +108,43 @@ class ServoControllerNode(Node):
         self.get_logger().info(
             f'Servo controller node initialized with {len(self.servos)} servos')
 
+    def _emergency_stop_callback(self, msg: Bool) -> None:
+        """Handle emergency stop messages"""
+        try:
+            if msg.data and self.is_e_stopped:
+                return
+
+            if not msg.data and self.is_e_stopped:
+                return
+
+            stop = msg.data
+            self.get_logger().warn(f"Emergency stop: {stop}")
+
+            if stop:
+                # Stop all servos immediately
+                for servo in self.servos:
+                    try:
+                        servo.stop()
+                    except Exception as e:
+                        self.get_logger().error(
+                            f'Failed to emergency stop servo {servo.id}: {str(e)}')
+            else:
+                # E-stop released
+                self.get_logger().info('Emergency stop released')
+
+            self.is_e_stopped = stop
+        except Exception as e:
+            self.get_logger().error(
+                f'Failed to handle emergency stop message: {str(e)}')
+
     def _joint_command_callback(self, msg: JointState) -> None:
         """Handle joint command messages for all servos"""
         try:
+            # Ignore commands if e-stopped
+            if self.is_e_stopped:
+                self.get_logger().warn('Ignoring command due to active emergency stop')
+                return
+
             # Process each joint in the command message
             for i, joint_name in enumerate(msg.name):
                 if joint_name in self.servo_map:
@@ -106,11 +153,14 @@ class ServoControllerNode(Node):
                         target_position = msg.position[i]
                         servo.rotate(target_position, servo.current_speed)
                     except Exception as e:
-                        self.get_logger().error(f'Failed to handle command for servo {servo.id}: {str(e)}')
+                        self.get_logger().error(
+                            f'Failed to handle command for servo {servo.id}: {str(e)}')
                 else:
-                    self.get_logger().warn(f'Received command for unknown joint: {joint_name}')
+                    self.get_logger().warn(
+                        f'Received command for unknown joint: {joint_name}')
         except Exception as e:
-            self.get_logger().error(f'Failed to handle joint command message: {str(e)}')
+            self.get_logger().error(
+                f'Failed to handle joint command message: {str(e)}')
 
     def update_servo_states(self) -> None:
         """Update and publish states for all servos"""
@@ -130,11 +180,13 @@ class ServoControllerNode(Node):
                     msg.velocity.append(0.0)  # We don't have velocity feedback
                     msg.effort.append(0.0)    # We don't have effort feedback
                 except Exception as e:
-                    self.get_logger().error(f'Failed to get state for servo {servo.id}: {str(e)}')
+                    self.get_logger().error(
+                        f'Failed to get state for servo {servo.id}: {str(e)}')
 
             self.joint_state_pub.publish(msg)
         except Exception as e:
-            self.get_logger().error(f'Failed to publish joint states: {str(e)}')
+            self.get_logger().error(
+                f'Failed to publish joint states: {str(e)}')
 
     def cleanup(self):
         """Clean up resources before shutdown"""
@@ -164,7 +216,7 @@ class ServoControllerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = None
-    
+
     try:
         node = ServoControllerNode()
         rclpy.spin(node)
