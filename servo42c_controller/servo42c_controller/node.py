@@ -186,7 +186,9 @@ class ServoControllerNode(Node):
                     try:
                         target_position = msg.position[i]
                         if not self.is_e_stopped:
-                            servo.rotate(target_position, servo.current_speed)
+                            # Use a default RPM for simulation, as JointState doesn't provide it here
+                            default_sim_rpm = 30.0 
+                            servo.rotate(target_position, default_sim_rpm) # Pass default RPM
                     except Exception as e:
                         self.get_logger().error(
                             f'Failed to handle command for servo {servo.id}: {str(e)}')

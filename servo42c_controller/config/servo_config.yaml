@@ -1,6 +1,7 @@
 # Configuration for the servo42c_controller
 servo42c_controller:
   ros__parameters:
+    simulation: true      # Enable simulation mode
     device: "ttyUSB0"     # Serial device for the servo controller
     baud_rate: 9600       # Baud rate for serial communication
     position_tolerance: 0.5  # Position tolerance in degrees

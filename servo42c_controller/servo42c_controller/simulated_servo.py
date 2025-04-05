@@ -6,9 +6,6 @@ from .servo import MIN_ANGLE, MAX_ANGLE, STEPS_PER_REV, MICROSTEP_FACTOR, GEAR_R
 class SimulatedServo:
     """Simulated version of the Servo class"""
 
-    SIMULATED_RPM = 6.0  # Fixed rotation speed
-    DEGREES_PER_SECOND = SIMULATED_RPM * 360.0 / 60.0
-
     def __init__(self,
                  node: Node,
                  protocol,
@@ -34,21 +31,22 @@ class SimulatedServo:
         self.name = name
         self.node = node
         self.last_update_time = node.get_clock().now()
-        self.current_speed = 120  # Keep same interface as real servo
+        self.current_speed_rpm = 0.0  # Store speed in RPM
 
     def initialize(self) -> bool:
         """Simulated initialization always succeeds"""
         self.logger.info(f'Simulated servo {self.id} initialized')
         return True
 
-    def rotate(self, angle: float, speed: int) -> bool:
-        """Simulate rotation to target angle"""
+    def rotate(self, angle: float, rpm: float) -> bool:
+        """Simulate rotation to target angle at specified RPM"""
         if not self.min_angle <= angle <= self.max_angle:
             self.logger.error(
                 f'Angle {angle} out of bounds for servo {self.id}')
             return False
 
         self.target_angle = angle
+        self.current_speed_rpm = rpm
         return True
 
     def stop(self) -> None:
@@ -64,15 +62,18 @@ class SimulatedServo:
         now = self.node.get_clock().now()
         dt = (now - self.last_update_time).nanoseconds / 1e9
 
-        # Calculate movement based on time elapsed
+        # Calculate movement based on time elapsed and current speed
+        degrees_per_second = self.current_speed_rpm * 360.0 / 60.0
+        angle_change = degrees_per_second * dt
+
         if self.current_angle < self.target_angle:
             self.current_angle += min(
-                self.DEGREES_PER_SECOND * dt,
+                angle_change,
                 self.target_angle - self.current_angle
             )
         elif self.current_angle > self.target_angle:
             self.current_angle -= min(
-                self.DEGREES_PER_SECOND * dt,
+                angle_change,
                 self.current_angle - self.target_angle
             )
 
