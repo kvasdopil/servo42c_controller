@@ -10,6 +10,7 @@ from .servo import Servo
 from rcl_interfaces.msg import ParameterDescriptor
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
+import math # Import math for pi
 
 
 # Limits and safety
@@ -18,6 +19,8 @@ MAX_ANGLE = 360.0   # degrees
 MAX_SERVOS = 4
 UPDATE_RATE = 0.1  # seconds
 
+# DEFAULT_SIM_RPM = 30.0 # Default RPM for simulation if no velocity command -- REMOVE
+DEFAULT_SIM_RAD_PER_SEC = 0.5 # Default rad/s for simulation if no velocity command (approx 5 RPM)
 
 class ServoControllerNode(Node):
     def __init__(self):
@@ -125,11 +128,11 @@ class ServoControllerNode(Node):
                 name=self.get_parameter(f'servo.{servo_id}.name').value,
                 servo_id=servo_id,
                 logger=self.get_logger(),
-                min_angle=self.get_parameter(
+                min_angle_deg=self.get_parameter(
                     f'servo.{servo_id}.min_angle').value,
-                max_angle=self.get_parameter(
+                max_angle_deg=self.get_parameter(
                     f'servo.{servo_id}.max_angle').value,
-                position_tolerance=self.get_parameter(
+                position_tolerance_deg=self.get_parameter(
                     'position_tolerance').value,
                 microstep_factor=8
             )
@@ -185,10 +188,19 @@ class ServoControllerNode(Node):
                     servo = self.servo_map[joint_name]
                     try:
                         target_position = msg.position[i]
+                        target_velocity_rad_s = DEFAULT_SIM_RAD_PER_SEC # Use defined default rad/s
+
+                        # Check if velocity information is available and valid
+                        if i < len(msg.velocity) and msg.velocity[i] != 0.0:
+                             # Use the commanded velocity directly
+                             target_velocity_rad_s = msg.velocity[i]
+                             self.get_logger().debug(f'Servo {servo.id}: Using commanded velocity {target_velocity_rad_s:.2f} rad/s')
+                        else:
+                            self.get_logger().debug(f'Servo {servo.id}: No valid velocity provided, using default {target_velocity_rad_s:.2f} rad/s')
+
                         if not self.is_e_stopped:
-                            # Use a default RPM for simulation, as JointState doesn't provide it here
-                            default_sim_rpm = 30.0 
-                            servo.rotate(target_position, default_sim_rpm) # Pass default RPM
+                            # Pass target velocity in rad/s directly
+                            servo.rotate(target_position, target_velocity_rad_s)
                     except Exception as e:
                         self.get_logger().error(
                             f'Failed to handle command for servo {servo.id}: {str(e)}')
@@ -211,10 +223,25 @@ class ServoControllerNode(Node):
 
             for servo in self.servos:
                 try:
-                    current_position = servo.get_angle()
+                    current_velocity = 0.0 # Default for real servo or if method doesn't exist
+                    # If in simulation mode, get velocity BEFORE updating the angle
+                    if self.simulation_mode and hasattr(servo, 'get_velocity_rad_per_sec'):
+                        # Log the state BEFORE getting velocity - USE CORRECT ATTRIBUTE NAMES
+                        self.get_logger().debug(f'Servo {servo.id} [Pre-Vel]: Current Angle={getattr(servo, "current_angle_rad", "N/A"):.4f} rad, Target Angle={getattr(servo, "target_angle_rad", "N/A"):.4f} rad')
+                        current_velocity = servo.get_velocity_rad_per_sec()
+                        self.get_logger().debug(f'Servo {servo.id}: Calculated Velocity = {current_velocity:.4f} rad/s')
+                    
+                    # Now get the updated angle (this also updates the internal state)
+                    current_position = servo.get_angle() # This is now in radians
+                    # Correct the log message unit to radians
+                    self.get_logger().debug(f'Servo {servo.id}: Updated Position = {current_position:.4f} rad')
+
+                    # Log values just before appending
+                    self.get_logger().debug(f'Servo {servo.id} [Publishing]: Pos={current_position:.4f} rad, Vel={current_velocity:.4f} rad/s')
+
                     msg.name.append(servo.name)
                     msg.position.append(current_position)
-                    msg.velocity.append(0.0)  # We don't have velocity feedback
+                    msg.velocity.append(current_velocity) # Report velocity from BEFORE the update
                     msg.effort.append(0.0)    # We don't have effort feedback
                 except Exception as e:
                     self.get_logger().error(

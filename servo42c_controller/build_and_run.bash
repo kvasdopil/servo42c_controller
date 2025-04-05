@@ -24,4 +24,5 @@ colcon build --symlink-install --packages-select servo42c_controller
 
 # Run the servo controller
 echo "Launching servo controller..."
-ros2 launch servo42c_controller main.launch.py
+# ros2 launch servo42c_controller main.launch.py
+ros2 launch servo42c_controller main.launch.py 
