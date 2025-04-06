@@ -1,21 +1,14 @@
-ompl: # Root key
-  planning_pipelines:
-    pipeline_names: ["ompl"]
-    ompl: # Matches pipeline name
-      planner_configs:
-        - RRTConnectkConfigDefault
-      RRTConnectkConfigDefault:
-        type: geometric::RRTConnect
-        range: 0.0 # Max motion added to tree. If 0.0, server will decide.
+planner_configs:
+  RRTConnect:
+    type: geometric::RRTConnect
+    range: 0.0  # Max motion added to tree. If 0.0, server will decide.
+  # Add more planners if needed
 
-  planning_groups:
-    arm_group: # Matches the group name in SRDF
-      default_planner_config: RRTConnectkConfigDefault
-      planner_configs:
-        - RRTConnectkConfigDefault
-      projection_evaluator: joints(joint0,joint1)
-      longest_valid_segment_fraction: 0.05
+arm_group: # Matches the group name in SRDF
+  planner_configs:
+    - RRTConnect
+  projection_evaluator: joints(joint0,joint1)
+  longest_valid_segment_fraction: 0.05
 
-# Removed move_group: wrapper, planning_plugin, and request_adapters
-
-# Note: The old format is removed entirely 
+# Default planner parameters
+default_planner_config: RRTConnect 
