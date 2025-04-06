@@ -6,16 +6,29 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node
 from launch.substitutions import LaunchConfiguration
+from moveit_configs_utils import MoveItConfigsBuilder
 
 def generate_launch_description():
     # Get the package directory
     pkg_dir = get_package_share_directory('servo42c_controller')
+    package_name = 'servo42c_controller'
     
     # Define paths for config and URDF files
     urdf_file = os.path.join(pkg_dir, 'description', 'arm.urdf')
     config_file = os.path.join(pkg_dir, 'config', 'servo_config.yaml')
     controllers_file = os.path.join(pkg_dir, 'config', 'controllers.yaml')
     
+    # --- MoveIt Configuration --- 
+    moveit_config = (
+        MoveItConfigsBuilder(package_name, package_name=package_name)
+        .robot_description(file_path=os.path.join(pkg_dir, "description", "arm.urdf"))
+        .robot_description_semantic(file_path=os.path.join(pkg_dir, "config", "moveit", "servo42c_controller.srdf"))
+        .trajectory_execution(file_path=os.path.join(pkg_dir, "config", "moveit", "moveit_controllers.yaml"))
+        .planning_pipelines(pipelines=["ompl"])
+        .to_moveit_configs()
+    )
+    # --- End MoveIt Configuration ---
+
     # Create the launch description with all actions
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -26,10 +39,9 @@ def generate_launch_description():
         Node(
             package="controller_manager",
             executable="ros2_control_node",
-            parameters=[urdf_file, controllers_file],
+            parameters=[moveit_config.robot_description, controllers_file],
             output="screen"
         ),
-        # Joint state broadcaster must be started before trajectory controller
         Node(
             package="controller_manager",
             executable="spawner",
@@ -49,7 +61,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'use_sim_time': LaunchConfiguration('use_sim_time', default='false'), 
-                'robot_description': open(urdf_file).read()
+                'robot_description': moveit_config.robot_description["robot_description"]
             }]
         ),
         Node(
@@ -58,5 +70,11 @@ def generate_launch_description():
             name='servo42c_controller',
             output='screen',
             parameters=[config_file]
+        ),
+        Node(
+            package="moveit_ros_move_group",
+            executable="move_group",
+            output="screen",
+            parameters=[moveit_config.to_dict()],
         )
     ])
