@@ -1,3 +1,18 @@
+planning_pipelines:
+  pipeline_names: ['ompl']
+
+  ompl:
+    planning_plugin: ompl_interface/OMPLPlanner
+
+    # Planning Needed Request Adaptors
+    request_adapters: >-
+      default_planning_request_adapters/ResolveConstraintFrames
+      default_planning_request_adapters/ValidateWorkspaceBounds
+      default_planning_request_adapters/CheckStartStateBounds
+      default_planning_request_adapters/CheckStartStateCollision
+
+    start_state_max_bounds_error: 0.1
+
 planner_configs:
   RRTConnect:
     type: geometric::RRTConnect
@@ -5,10 +20,11 @@ planner_configs:
   # Add more planners if needed
 
 arm_group: # Matches the group name in SRDF
+  default_planner_config: RRTConnect # Keep this matching a config in planner_configs
   planner_configs:
     - RRTConnect
-  projection_evaluator: joints(joint0,joint1)
+  projection_evaluator: joints(joint0,joint1) # Make sure these joints exist
   longest_valid_segment_fraction: 0.05
 
-# Default planner parameters
+# Default planner parameters - This might be superseded by the group default
 default_planner_config: RRTConnect 

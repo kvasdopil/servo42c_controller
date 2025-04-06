@@ -22,11 +22,17 @@ def generate_launch_description():
     moveit_config = (
         MoveItConfigsBuilder(package_name, package_name=package_name)
         .robot_description(file_path=os.path.join(pkg_dir, "description", "arm.urdf"))
-        .robot_description_semantic(file_path=os.path.join(pkg_dir, "config", "moveit", "servo42c_controller.srdf"))
-        .trajectory_execution(file_path=os.path.join(pkg_dir, "config", "moveit", "moveit_controllers.yaml"))
+        .robot_description_semantic(file_path=os.path.join(pkg_dir, "config", "servo42c_controller.srdf"))
+        .trajectory_execution(file_path=os.path.join(pkg_dir, "config", "moveit_controllers.yaml"))
         .planning_pipelines(pipelines=["ompl"])
         .to_moveit_configs()
     )
+    
+    # Get the dictionary, ensure 'ompl' key exists, and add planning_plugins
+    moveit_configs_dict = moveit_config.to_dict()
+    ompl_config = moveit_configs_dict.setdefault("ompl", {})
+    ompl_config["planning_plugins"] = ["ompl_interface/OMPLPlanner"]
+
     # --- End MoveIt Configuration ---
 
     # Create the launch description with all actions
@@ -52,6 +58,7 @@ def generate_launch_description():
             package="controller_manager",
             executable="spawner",
             arguments=["arm_trajectory_controller"],
+            parameters=[controllers_file],
             output="screen",
         ),
         Node(
@@ -70,11 +77,14 @@ def generate_launch_description():
             name='servo42c_controller',
             output='screen',
             parameters=[config_file]
-        ),
+        ), # Removed standalone node
         Node(
             package="moveit_ros_move_group",
             executable="move_group",
             output="screen",
-            parameters=[moveit_config.to_dict()],
+            parameters=[
+                moveit_configs_dict,
+                {"moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"}
+            ],
         )
     ])

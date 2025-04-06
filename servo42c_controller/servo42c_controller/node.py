@@ -16,7 +16,7 @@ import math # Import math for pi
 # Limits and safety
 MIN_ANGLE = -360.0  # degrees
 MAX_ANGLE = 360.0   # degrees
-MAX_SERVOS = 4
+MAX_SERVOS = 3
 UPDATE_RATE = 0.1  # seconds
 
 # DEFAULT_SIM_RPM = 30.0 # Default RPM for simulation if no velocity command -- REMOVE
