@@ -23,7 +23,7 @@ const ModbusRTU = require("modbus-serial");
 // --- Configuration ---
 const SERIAL_PORT = "/dev/ttyUSB0"; // Adapter path
 const BAUD_RATE = 38400;         // Baud rate (User confirmed)
-const TARGET_SLAVE_ID = 1;       // Device ID
+const TARGET_SLAVE_ID = 2;       // Device ID
 const TIMEOUT = 1000;            // Timeout (ms)
 
 // Read Addresses
@@ -36,8 +36,8 @@ const POS_QTY = 2;
 const MOVE_ABS_ADDR = 254;
 
 // Loop Settings
-const MOVE_ACCEL = 1; // Minimal sensible acceleration
-const MOVE_SPEED = 200; // RPM for moves
+const MOVE_ACCEL = 0xf0; // Minimal sensible acceleration
+const MOVE_SPEED = 0xff; // RPM for moves
 const POSITION_1 = 30000;
 const POSITION_2 = 0;
 const SLEEP_DURATION_MS = 5000; // 5 seconds
@@ -67,8 +67,8 @@ async function readPosition(client) {
     } catch (err) {
         // Restore error logging, but be less verbose for common timeouts during monitoring
         if (!err.message || (!err.message.includes("Timed out") && !err.message.includes("Port Not Open"))) {
-             console.error(`\n -> Position Read Error: ${err.message || err}`);
-             if (err.modbusCode) console.error(`   Modbus Exception: ${err.modbusCode}`);
+            console.error(`\n -> Position Read Error: ${err.message || err}`);
+            if (err.modbusCode) console.error(`   Modbus Exception: ${err.modbusCode}`);
         } else {
             // Log timeouts less intrusively during monitoring
             process.stdout.write('\rPosition Read Timeout...        ');
@@ -90,12 +90,12 @@ async function moveAbsolute(client, acceleration, speed, absPulses) {
     try {
         const response = await client.writeRegisters(address, dataArray);
         if (response && response.address === address && response.length === dataArray.length) {
-             console.log(" -> Move command acknowledged."); // Restore log
-             return true;
+            console.log(" -> Move command acknowledged."); // Restore log
+            return true;
         } else {
-             // Restore error logging
-             console.error(" -> Move command failed: Unexpected response. Response:", response);
-             return false;
+            // Restore error logging
+            console.error(" -> Move command failed: Unexpected response. Response:", response);
+            return false;
         }
     } catch (err) {
         // Restore error logging
@@ -124,11 +124,11 @@ async function monitorPosition(client, durationMs, intervalMs) {
             // We might not need this else block unless readPosition returns null for other reasons
             // process.stdout.write(`\rPosition Read Error...        `);
         }
-         const remainingTime = endTime - Date.now();
-         const sleepTime = Math.min(intervalMs, remainingTime > 0 ? remainingTime : 0);
-         if (sleepTime > 0) {
-             await sleep(sleepTime);
-         }
+        const remainingTime = endTime - Date.now();
+        const sleepTime = Math.min(intervalMs, remainingTime > 0 ? remainingTime : 0);
+        if (sleepTime > 0) {
+            await sleep(sleepTime);
+        }
     }
     process.stdout.write("\r                                     \r"); // Clear line
     console.log(`--- Monitoring finished ---`); // Restore log
@@ -175,12 +175,12 @@ async function main() {
             console.log("\nClosing connection..."); // Restore log
             await sleep(100);
             client.close(() => {
-                 console.log("Connection closed."); // Restore log
+                console.log("Connection closed."); // Restore log
             });
         } else if (isConnected) {
-             console.log("\nConnection already closed."); // Restore log
+            console.log("\nConnection already closed."); // Restore log
         } else {
-             console.log("\nClient was not connected."); // Restore log
+            console.log("\nClient was not connected."); // Restore log
         }
     }
 }
@@ -199,8 +199,8 @@ process.on('SIGINT', () => {
     } else {
         process.exit(0);
     }
-     setTimeout(() => {
-          console.log("Forcing exit.");
-          process.exit(1);
-     }, 2000);
+    setTimeout(() => {
+        console.log("Forcing exit.");
+        process.exit(1);
+    }, 2000);
 }); 

@@ -1,11 +1,15 @@
 # Configuration for the servo42c_controller
 servo42c_controller:
   ros__parameters:
-    simulation: true      # Enable simulation mode
+    simulation: false      # Enable simulation mode
     device: "ttyUSB0"     # Serial device for the servo controller
-    baud_rate: 9600       # Baud rate for serial communication
+    baud_rate: 38400      # Baud rate for serial communication (Modbus RTU)
     position_tolerance: 0.5  # Position tolerance in degrees
     update_rate: 0.1      # Rate to update servo positions and publish joint states
+    modbus_acceleration: 240   # Default accel (0xF0)
+    modbus_speed: 255          # Default speed (0xFF)
+    modbus_timeout: 1.0        # Modbus RTU timeout (s)
+    servo_count: 2             # Expect two servos (indices 0 and 1)
 
     # Servo configurations
     servo:
@@ -13,11 +17,9 @@ servo42c_controller:
         name: "joint0"    # Maps to joint0 in the URDF
         min_angle: -180.0 # Minimum angle for joint0
         max_angle: 180.0  # Maximum angle for joint0
+        modbus_id: 1      # Default Modbus ID for this servo
       1:
         name: "joint1"    # Maps to joint1 in the URDF
         min_angle: -90.0  # Minimum angle for joint1
         max_angle: 90.0   # Maximum angle for joint1
-      2:
-        name: "joint2"    # Maps to joint2 in the URDF
-        min_angle: -270.0 # Minimum angle for joint2
-        max_angle: 270.0  # Maximum angle for joint2 
+        modbus_id: 2      # Default Modbus ID for this servo

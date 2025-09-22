@@ -50,8 +50,11 @@ class SimulatedServo:
         self.logger.info(f'Simulated servo {self.id} initialized at {self.current_angle_rad:.4f} rad')
         return True
 
-    def rotate(self, angle_rad: float, rad_per_sec: float) -> bool:
-        """Simulate rotation to target angle (radians) at specified rad/s"""
+    def rotate(self, angle_rad: float, rad_per_sec: float, accel_override: int = None, speed_override: int = None) -> bool:
+        """Simulate rotation to target angle (radians) at specified rad/s.
+
+        accel_override and speed_override are accepted for API parity and ignored.
+        """
         # Check bounds using radians
         if not self.min_angle_rad <= angle_rad <= self.max_angle_rad:
             self.logger.error(

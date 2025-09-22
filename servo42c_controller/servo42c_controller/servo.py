@@ -8,9 +8,7 @@ STEPS_PER_REV = 200  # Base steps per revolution
 MICROSTEP_FACTOR = 8  # Microstepping factor
 GEAR_RATIO = 37      # Gear reduction ratio
 
-# defaults
-MAX_SPEED = 128
-MIN_SPEED = 1
+# defaults (motion limits in radians)
 MIN_ANGLE = radians(-360.0)  # -2π radians
 MAX_ANGLE = radians(360.0)   # 2π radians
 POSITION_TOLERANCE = radians(0.5)  # ~0.00873 radians
@@ -52,11 +50,11 @@ class Servo:
                  min_angle: float = MIN_ANGLE,
                  max_angle: float = MAX_ANGLE,
                  position_tolerance: float = POSITION_TOLERANCE,
-                 max_speed: int = MAX_SPEED,
-                 min_speed: int = MIN_SPEED,
                  steps_per_rev: int = STEPS_PER_REV,
                  microstep_factor: int = MICROSTEP_FACTOR,
                  gear_ratio: int = GEAR_RATIO,
+                 modbus_acceleration: int = 0xF0,
+                 modbus_speed: int = 0xFF,
                  name: str = None
                  ):
         """Initialize servo instance"""
@@ -67,14 +65,13 @@ class Servo:
         self.min_angle = min_angle
         self.max_angle = max_angle
         self.position_tolerance = position_tolerance
-        self.max_speed = max_speed
-        self.min_speed = min_speed
         self.pulses_per_rotation = steps_per_rev * microstep_factor * gear_ratio
         self.is_enabled = False
         self.node = node  # Store node reference
         self.microstep_factor = microstep_factor
         self.name = name
-        self.current_speed = 120  # Default speed in internal units
+        self.modbus_acceleration = modbus_acceleration & 0xFFFF
+        self.modbus_speed = modbus_speed & 0xFFFF
 
     def _angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
@@ -85,18 +82,11 @@ class Servo:
         return float(pulses) * (2 * pi) / self.pulses_per_rotation
 
     def initialize(self) -> bool:
-        """Initialize servo and get current position"""
+        """Initialize servo and get current position via Modbus"""
         try:
             self.logger.info(f'Initializing servo {self.id}')
-            if not self.protocol.get_serial_enabled(self.id):
-                return False
-
+            # Mark enabled and fetch initial position
             self.is_enabled = True
-
-            # Set microsteps per revolution
-            self.protocol.set_msteps(self.id, self.microstep_factor)
-
-            # Get initial position
             self.target_pulses = self.protocol.get_pulses(self.id)
 
             self.logger.info(f'Successfully initialized servo {self.id}')
@@ -107,8 +97,13 @@ class Servo:
                 f'Failed to initialize servo {self.id}: {str(e)}')
             return False
 
-    def rotate(self, angle: float, speed: int) -> bool:
-        """Rotate servo to specified angle"""
+    def rotate(self, angle: float, rad_per_sec: float, accel_override: int = None, speed_override: int = None) -> bool:
+        """Command absolute target angle (radians) using Modbus absolute move.
+
+        accel_override and speed_override, if provided, are raw device units (0..65535).
+        """
+
+        self.logger.info(f'Rotating servo {self.id} to angle (rad): {angle}, rad_per_sec: {rad_per_sec}, accel_override: {accel_override}, speed_override: {speed_override}')
         if not self.is_enabled:
             self.logger.warn(f'Servo {self.id} is currently disabled')
             return False
@@ -118,22 +113,16 @@ class Servo:
                 f'Angle {angle} out of bounds for servo {self.id}')
             return False
 
-        if not self.min_speed <= speed <= self.max_speed:
-            self.logger.error(
-                f'Speed {speed} out of bounds for servo {self.id}')
-            return False
-
         new_target_pulses = self._angle_to_pulses(angle)
-        diff = new_target_pulses - self.target_pulses
-
-        # If no movement is needed, return success immediately
-        if diff == 0:
+        if new_target_pulses == self.target_pulses:
             return True
 
         try:
-            if self.protocol.rotate(self.id, speed, diff):
+            acceleration = self.modbus_acceleration if accel_override is None else (accel_override & 0xFFFF)
+            speed = self.modbus_speed if speed_override is None else (speed_override & 0xFFFF)
+            if self.protocol.move_absolute(self.id, acceleration, speed, new_target_pulses):
                 self.target_pulses = new_target_pulses
-                self.logger.info(f'Moving servo {self.id} to angle: {angle}')
+                self.logger.info(f'Moving servo {self.id} to angle (rad): {angle}')
                 return True
         except Exception as e:
             self.logger.error(

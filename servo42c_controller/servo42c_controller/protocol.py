@@ -1,86 +1,160 @@
-from typing import List
-from .serial_port import SerialPort
+from typing import Optional
+import threading
 
-# Constants for commands
-GET_PULSES = 0x33
-GET_SERIAL_ENABLED = 0xf3
-ROTATE = 0xfd
-STOP = 0xf7
-SET_MSTEPS = 0x84
-
-ID_BYTE = 0xe0
+# Modbus addresses and constants (assumed from modbus_test/scan.js)
+POS_ADDR = 51            # Input registers address (2 regs -> 32-bit position)
+POS_QTY = 2
+MOVE_ABS_ADDR = 254      # Holding registers address for absolute move (4 regs)
 
 
 class Servo42CProtocol:
-    """Protocol implementation for Servo42C communication"""
+    """Modbus RTU protocol implementation for Servo42D devices.
 
-    def __init__(self, device: str, baud_rate: int, logger=None):
-        self.serial = SerialPort(device, baud_rate, logger)
+    We preserve the class name to minimize changes to import sites.
+    """
+
+    def __init__(self, device: str, baud_rate: int, logger=None, timeout: float = 1.0):
+        self.device = f'/dev/{device}' if not device.startswith('/dev/') else device
+        self.baud_rate = baud_rate
+        self.timeout = timeout
+        self.logger = logger
+        self.client: Optional[object] = None
+        self._io_lock = threading.Lock()
 
     def connect(self) -> bool:
-        """Establish connection with the servo controller"""
-        return self.serial.connect()
+        try:
+            if self.client is not None:
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
 
-    def send_command(self, id: int, msg: List[int], return_length: int = 1) -> List[int]:
-        """Send command and read response"""
-        self.serial.write(bytes([ID_BYTE + id] + msg))
-        if return_length > 0:
-            response = self.serial.read(return_length + 1)  # +1 for id byte
-            if response[0] != ID_BYTE + id:
-                raise RuntimeError(
-                    f'Invalid ID received: expected {ID_BYTE + id}, got {response[0]}')
-            return list(response[1:])
-        return []
+            # Lazy import to allow simulation without pymodbus installed
+            from pymodbus.client import ModbusSerialClient
+            import time
+            self.client = ModbusSerialClient(
+                method='rtu',
+                port=self.device,
+                baudrate=self.baud_rate,
+                parity='N',
+                stopbits=1,
+                bytesize=8,
+                timeout=self.timeout,
+                retries=2,
+                retry_on_empty=True,
+                strict=False,
+                rtscts=False,
+                dsrdtr=False,
+                xonxoff=False,
+            )
+            ok = self.client.connect()
+            # Give the RS485 adapter/device a brief settle time
+            if ok:
+                time.sleep(0.1)
+            if ok and self.logger:
+                self.logger.info(f'Connected to {self.device} at {self.baud_rate} baud (Modbus RTU)')
+            if not ok and self.logger:
+                self.logger.error('Failed to establish Modbus RTU connection')
+            return bool(ok)
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f'Modbus connect error: {e}')
+            return False
+
+    def _ensure(self) -> None:
+        if self.client is None:
+            raise RuntimeError('Modbus client not initialized')
 
     def get_pulses(self, id: int) -> int:
-        """Get current pulse count"""
-        [a, b, c, d] = self.send_command(id, [GET_PULSES], 4)
-        # Combine bytes into a signed 32-bit integer
-        value = (a << 24) + (b << 16) + (c << 8) + d
-        # Handle two's complement for negative values
-        if value & 0x80000000:  # If highest bit is set (negative)
-            value = -((~value & 0xFFFFFFFF) + 1)
-        return value
-    
-    def set_msteps(self, id: int, msteps: int) -> bool:
-        """Set microsteps per revolution"""
-        return self.send_command(id, [SET_MSTEPS, msteps], 1) == [1]
+        """Read current absolute position in pulses (32-bit signed)."""
+        self._ensure()
+        last_error = None
+        for attempt in range(3):
+            try:
+                with self._io_lock:
+                    rr = self.client.read_input_registers(address=POS_ADDR, count=POS_QTY, slave=id)
+                if hasattr(rr, 'isError') and rr.isError():
+                    last_error = rr
+                    # brief backoff before retry
+                    import time
+                    time.sleep(0.1)
+                    continue
+                regs = getattr(rr, 'registers', None)
+                if not regs or len(regs) != 2:
+                    last_error = RuntimeError(f'Unexpected position register count: {len(regs) if regs is not None else "none"}')
+                    import time
+                    time.sleep(0.1)
+                    continue
+                value = ((regs[0] & 0xFFFF) << 16) | (regs[1] & 0xFFFF)
+                # Convert to signed 32-bit
+                if value & 0x80000000:
+                    value = -((~value & 0xFFFFFFFF) + 1)
+                return int(value)
+            except Exception as e:
+                last_error = e
+                import time
+                time.sleep(0.1)
+        raise RuntimeError(f'Modbus read position failed: {last_error}')
 
-    def rotate(self, id: int, speed: int, pulses: int) -> bool:
-        """Rotate servo by specified number of pulses at given speed"""
+    def move_absolute(self, id: int, acceleration: int, speed: int, abs_pulses: int) -> bool:
+        """Issue absolute move command via holding registers.
 
-        # Calculate pulses preserving sign
-        abs_pulses = abs(pulses)
-        sign_bit = 0b10000000 if pulses > 0 else 0
-
-        while abs_pulses > 0:
-            p = min(abs_pulses, 0xffff)
-            abs_pulses -= p
-
-            [ok] = self.send_command(id, [
-                ROTATE,
-                sign_bit + speed,
-                (p >> 8) & 0xff,
-                p & 0xff
-            ], 1)
-
-            if ok != 1:
-                return False
-
+        Data layout: [accel, speed, pos_hi, pos_lo].
+        """
+        self._ensure()
+        pos_hi = (abs_pulses >> 16) & 0xFFFF
+        pos_lo = abs_pulses & 0xFFFF
+        values = [acceleration & 0xFFFF, speed & 0xFFFF, pos_hi, pos_lo]
+        with self._io_lock:
+            wr = self.client.write_registers(address=MOVE_ABS_ADDR, values=values, slave=id)
+        if wr.isError():
+            if self.logger:
+                self.logger.error(f'Modbus write move_absolute failed: {wr}')
+            return False
         return True
 
     def stop(self, id: int) -> None:
-        """Stop servo movement"""
-        self.send_command(id, [STOP], 0)
+        """Broadcast emergency stop using vendor function 0xF7 to unit 0."""
+        self._ensure()
+        try:
+            from pymodbus.pdu import ModbusRequest
 
-    def get_serial_enabled(self, id: int) -> bool:
-        """Check if serial is enabled for a servo"""
-        self.serial.write(bytes([0xe0 + id, GET_SERIAL_ENABLED, 1]))
-        data = self.serial.read(2)  # Read ID byte and status
-        if data[0] != 0xe0 + id:
-            raise RuntimeError('Invalid ID received')
-        return data[1] == 1
+            class EmergencyStopRequest(ModbusRequest):
+                function_code = 0xF7
+
+                def __init__(self):
+                    super().__init__()
+
+                def encode(self) -> bytes:
+                    # No payload for emergency stop
+                    return b''
+
+                def decode(self, data: bytes) -> None:
+                    # No response expected for broadcast
+                    return None
+
+                def get_response_pdu_size(self) -> int:
+                    # No response expected for broadcast requests
+                    return 0
+
+            req = EmergencyStopRequest()
+            try:
+                # Broadcast to all units; most devices won't send a response
+                with self._io_lock:
+                    self.client.execute(req, slave=0)
+            except Exception:
+                # Some client versions may not support execute() with custom requests cleanly.
+                # Since this is a broadcast fire-and-forget, ignore errors here.
+                pass
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f'Failed to send emergency stop: {e}')
 
     def close(self) -> None:
-        """Close serial connection"""
-        self.serial.close()
+        if self.client is not None:
+            try:
+                self.client.close()
+                if self.logger:
+                    self.logger.info('Modbus connection closed')
+            finally:
+                self.client = None
