@@ -71,6 +71,7 @@ class Servo:
         self.name = name
         self.modbus_acceleration = modbus_acceleration & 0xFFFF
         self.modbus_speed = modbus_speed & 0xFFFF
+        self.last_position = -999999999
 
     def _angle_to_pulses(self, angle_rad: float) -> int:
         """Convert angle in radians to pulses"""
@@ -99,7 +100,6 @@ class Servo:
 
         accel_override and speed_override, if provided, are raw device units (0..65535).
         """
-
         self.logger.info(f'Rotating servo {self.id} to angle (rad): {angle}, rad_per_sec: {rad_per_sec}, accel_override: {accel_override}, speed_override: {speed_override}')
         if not self.is_enabled:
             self.logger.warn(f'Servo {self.id} is currently disabled')
@@ -111,6 +111,10 @@ class Servo:
             return False
 
         target = self._angle_to_pulses(angle)
+
+        if self.last_position == target:
+            return True
+
         try:
             acceleration = self.modbus_acceleration if accel_override is None else (accel_override & 0xFFFF)
             speed = self.modbus_speed if speed_override is None else (speed_override & 0xFFFF)
@@ -156,4 +160,5 @@ class Servo:
     def get_angle(self) -> float:
         """Get current angle"""
         current_pulses = self.protocol.get_pulses(self.id)
+        self.last_position = current_pulses
         return self._pulses_to_angle(current_pulses)

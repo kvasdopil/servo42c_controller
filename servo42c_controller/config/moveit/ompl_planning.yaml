@@ -23,7 +23,7 @@ arm_group: # Matches the group name in SRDF
   default_planner_config: RRTConnect # Keep this matching a config in planner_configs
   planner_configs:
     - RRTConnect
-  projection_evaluator: joints(joint0,joint1) # Make sure these joints exist
+  projection_evaluator: joints(joint1,joint2) # Make sure these joints exist
   longest_valid_segment_fraction: 0.05
 
 # Default planner parameters - This might be superseded by the group default

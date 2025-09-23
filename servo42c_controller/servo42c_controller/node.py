@@ -86,7 +86,7 @@ class ServoControllerNode(Node):
         # Create publishers and subscribers for topic-based control
         self.joint_state_pub = self.create_publisher(
             JointState,
-            '/servo/states',
+            '/joint_states',
             10
         )
 
@@ -97,13 +97,13 @@ class ServoControllerNode(Node):
             10
         )
 
-        # Joint trajectory subscriber for per-move accel/speed overrides (device units)
-        self.trajectory_sub = self.create_subscription(
-            JointTrajectory,
-            '/servo/trajectory',
-            self._trajectory_callback,
-            10
-        )
+        # # Joint trajectory subscriber for per-move accel/speed overrides (device units)
+        # self.trajectory_sub = self.create_subscription(
+        #     JointTrajectory,
+        #     '/servo/trajectory',
+        #     self._trajectory_callback,
+        #     10
+        # )
 
         # Emergency stop subscriber
         self.e_stop_sub = self.create_subscription(
@@ -153,7 +153,7 @@ class ServoControllerNode(Node):
             servo = SimulatedServo(
                 self,
                 protocol=self.protocol,
-                name=self.get_parameter(f'servo.{servo_id}.name').value,
+                name='joint'+str(servo_id),
                 servo_id=servo_id,
                 logger=self.get_logger(),
                 min_angle_deg=self.get_parameter(
@@ -168,7 +168,7 @@ class ServoControllerNode(Node):
             servo = Servo(
                 self,
                 protocol=self.protocol,
-                name=self.get_parameter(f'servo.{servo_id}.name').value,
+                name='joint'+str(servo_id),
                 servo_id=servo_id,
                 logger=self.get_logger(),
                 min_angle=self.get_parameter(
@@ -216,6 +216,7 @@ class ServoControllerNode(Node):
         velocity: device speed override (0..65535) if provided; also used as rad/s for simulation
         effort: device acceleration override (0..65535) if provided
         """
+        self.get_logger().info(f'Received joint command message: {msg}')
         try:
             # Process each joint in the command message
             for i, joint_name in enumerate(msg.name):
@@ -232,11 +233,14 @@ class ServoControllerNode(Node):
 
                         if i < len(msg.velocity):
                             try:
-                                # Use velocity both for simulation rad/s and as device speed override
-                                target_velocity_rad_s = float(msg.velocity[i]) if isinstance(msg.velocity[i], (float, int)) else DEFAULT_SIM_RAD_PER_SEC
-                                speed_override = int(max(0, min(65535, round(msg.velocity[i]))))
-                            except Exception:
-                                pass
+                                vel_value = float(msg.velocity[i]) if isinstance(msg.velocity[i], (float, int)) else None
+                                # Use velocity for simulation rad/s
+                                target_velocity_rad_s = vel_value if vel_value is not None else DEFAULT_SIM_RAD_PER_SEC
+                                # Only use velocity as speed override if it's meaningful (> 0)
+                                if vel_value is not None and vel_value > 0:
+                                    speed_override = int(max(0, min(65535, round(vel_value))))
+                            except Exception as e:
+                                self.get_logger().error(f'Error processing velocity for joint {joint_name}: {e}')
 
                         if i < len(msg.effort):
                             try:

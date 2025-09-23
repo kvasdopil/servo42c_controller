@@ -7,6 +7,7 @@ from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node
 from launch.substitutions import LaunchConfiguration
 from moveit_configs_utils import MoveItConfigsBuilder
+import xacro
 
 def generate_launch_description():
     # Get the package directory
@@ -17,8 +18,11 @@ def generate_launch_description():
     urdf_file = os.path.join(pkg_dir, 'description', 'arm.urdf')
     config_file = os.path.join(pkg_dir, 'config', 'servo_config.yaml')
     controllers_file = os.path.join(pkg_dir, 'config', 'controllers.yaml')
-    
-    # --- MoveIt Configuration --- 
+
+    # Load URDF
+    robot_description_content = xacro.process_file(urdf_file).toxml()
+
+    # --- MoveIt Configuration ---
     moveit_config = (
         MoveItConfigsBuilder(package_name, package_name=package_name)
         .robot_description(file_path=os.path.join(pkg_dir, "description", "arm.urdf"))
@@ -48,12 +52,13 @@ def generate_launch_description():
             parameters=[moveit_config.robot_description, controllers_file],
             output="screen"
         ),
-        Node(
-            package="controller_manager",
-            executable="spawner",
-            arguments=["joint_state_broadcaster"],
-            output="screen",
-        ),
+        # Don't use joint_state_broadcaster - servo controller provides joint states
+        # Node(
+        #     package="controller_manager",
+        #     executable="spawner",
+        #     arguments=["joint_state_broadcaster"],
+        #     output="screen",
+        # ),
         Node(
             package="controller_manager",
             executable="spawner",
@@ -67,8 +72,8 @@ def generate_launch_description():
             name='robot_state_publisher',
             output='screen',
             parameters=[{
-                'use_sim_time': LaunchConfiguration('use_sim_time', default='false'), 
-                'robot_description': moveit_config.robot_description["robot_description"]
+                'use_sim_time': LaunchConfiguration('use_sim_time', default='false'),
+                'robot_description': robot_description_content
             }]
         ),
         Node(
@@ -77,7 +82,7 @@ def generate_launch_description():
             name='servo42c_controller',
             output='screen',
             parameters=[config_file]
-        ), # Removed standalone node
+        ),
         Node(
             package="moveit_ros_move_group",
             executable="move_group",
@@ -86,5 +91,13 @@ def generate_launch_description():
                 moveit_configs_dict,
                 {"moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"}
             ],
+        ),
+        Node(
+            package="rviz2",
+            executable="rviz2",
+            name="rviz2",
+            output="screen",
+            arguments=["-d", os.path.join(pkg_dir, "config", "moveit.rviz")],
+            parameters=[moveit_configs_dict],
         )
     ])

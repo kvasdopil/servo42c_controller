@@ -2,6 +2,12 @@
 
 set -e  # Exit on error
 
+# Set environment variables to avoid unbound variable errors
+export AMENT_TRACE_SETUP_FILES=
+export COLCON_TRACE=
+export AMENT_PYTHON_EXECUTABLE=python3
+export COLCON_PREFIX_PATH=
+
 . /opt/ros/jazzy/setup.bash
 
 # Navigate to the workspace root
@@ -22,6 +28,6 @@ colcon build --symlink-install --packages-select servo42c_controller
 # Source setup
 . install/setup.bash
 
-# Run the servo controller (minimal launch without MoveIt)
-echo "Launching servo controller (minimal)..."
-ros2 launch servo42c_controller minimal.launch.py 
+# Run the servo controller (main launch with MoveIt)
+echo "Launching servo controller..."
+ros2 launch servo42c_controller main.launch.py 
