@@ -1,10 +1,11 @@
 from typing import Optional
 import threading
+import time
 
 # Modbus addresses and constants (assumed from modbus_test/scan.js)
 POS_ADDR = 51            # Input registers address (2 regs -> 32-bit position)
 POS_QTY = 2
-MOVE_ABS_ADDR = 254      # Holding registers address for absolute move (4 regs)
+MOVE_ABS_ADDR = 0xfe      # Holding registers address for absolute move (4 regs)
 
 
 class Servo42CProtocol:
@@ -69,6 +70,9 @@ class Servo42CProtocol:
         """Read current absolute position in pulses (32-bit signed)."""
         self._ensure()
         last_error = None
+        start_overall = time.monotonic()
+        if self.logger:
+            self.logger.debug(f'Modbus get_pulses start id={id}')
         for attempt in range(3):
             try:
                 with self._io_lock:
@@ -76,25 +80,41 @@ class Servo42CProtocol:
                 if hasattr(rr, 'isError') and rr.isError():
                     last_error = rr
                     # brief backoff before retry
-                    import time
                     time.sleep(0.1)
                     continue
                 regs = getattr(rr, 'registers', None)
                 if not regs or len(regs) != 2:
                     last_error = RuntimeError(f'Unexpected position register count: {len(regs) if regs is not None else "none"}')
-                    import time
                     time.sleep(0.1)
                     continue
                 value = ((regs[0] & 0xFFFF) << 16) | (regs[1] & 0xFFFF)
                 # Convert to signed 32-bit
                 if value & 0x80000000:
                     value = -((~value & 0xFFFFFFFF) + 1)
+                if self.logger:
+                    self.logger.debug(f'Modbus get_pulses ok id={id} dt={(time.monotonic() - start_overall):.3f}s')
                 return int(value)
             except Exception as e:
                 last_error = e
-                import time
                 time.sleep(0.1)
+        if self.logger:
+            self.logger.error(f'Modbus get_pulses failed id={id} dt={(time.monotonic() - start_overall):.3f}s: {last_error}')
         raise RuntimeError(f'Modbus read position failed: {last_error}')
+
+    def get_motor_status(self, id: int) -> int:
+        """Read motor status via holding registers.
+        """
+        self._ensure()
+        with self._io_lock:
+            rd = self.client.read_input_registers(address=0xf1, count=1, slave=id)
+        if rd.isError():
+            if self.logger:
+                self.logger.error(f'Modbus get_motor_status failed id={id} {rd}')
+            return False
+        regs = getattr(rd, 'registers', None)
+        if self.logger:
+            self.logger.info(f'Modbus get_motor_status ok value={regs} id={id}')
+        return regs[0]
 
     def move_absolute(self, id: int, acceleration: int, speed: int, abs_pulses: int) -> bool:
         """Issue absolute move command via holding registers.
@@ -105,47 +125,39 @@ class Servo42CProtocol:
         pos_hi = (abs_pulses >> 16) & 0xFFFF
         pos_lo = abs_pulses & 0xFFFF
         values = [acceleration & 0xFFFF, speed & 0xFFFF, pos_hi, pos_lo]
+        start = time.monotonic()
+
+        motor_status = self.get_motor_status(id)
+        if motor_status > 1:
+            if self.logger:
+                self.logger.info(f'STATUS > 1, stopping id={id} status={motor_status}')
+            # stop the motor
+            wr = self.client.write_registers(address=MOVE_ABS_ADDR, values=[acceleration & 0xFFFF, 0, 0, 0], slave=id)
+            for i in range(10):
+                motor_status = self.get_motor_status(id)
+                if motor_status <= 1:
+                    if self.logger:
+                        self.logger.info(f'STOPPED id={id} status={motor_status}')
+                    break
+                time.sleep(0.1)
+            
+        if self.logger:
+            self.logger.info(f'Modbus move_absolute start id={id} accel={acceleration & 0xFFFF} speed={speed & 0xFFFF} pulses={abs_pulses}')
         with self._io_lock:
             wr = self.client.write_registers(address=MOVE_ABS_ADDR, values=values, slave=id)
         if wr.isError():
             if self.logger:
-                self.logger.error(f'Modbus write move_absolute failed: {wr}')
+                self.logger.error(f'Modbus move_absolute failed id={id} dt={(time.monotonic() - start):.3f}s: {wr}')
             return False
+        if self.logger:
+            self.logger.info(f'Modbus move_absolute ok id={id} dt={(time.monotonic() - start):.3f}s')
         return True
 
-    def stop(self, id: int) -> None:
-        """Broadcast emergency stop using vendor function 0xF7 to unit 0."""
+    def stop(self, id: int, acceleration: int = 0xff) -> None:
         self._ensure()
         try:
-            from pymodbus.pdu import ModbusRequest
+            self.move_absolute(id=id, acceleration=acceleration, speed=0, abs_pulses=0)
 
-            class EmergencyStopRequest(ModbusRequest):
-                function_code = 0xF7
-
-                def __init__(self):
-                    super().__init__()
-
-                def encode(self) -> bytes:
-                    # No payload for emergency stop
-                    return b''
-
-                def decode(self, data: bytes) -> None:
-                    # No response expected for broadcast
-                    return None
-
-                def get_response_pdu_size(self) -> int:
-                    # No response expected for broadcast requests
-                    return 0
-
-            req = EmergencyStopRequest()
-            try:
-                # Broadcast to all units; most devices won't send a response
-                with self._io_lock:
-                    self.client.execute(req, slave=0)
-            except Exception:
-                # Some client versions may not support execute() with custom requests cleanly.
-                # Since this is a broadcast fire-and-forget, ignore errors here.
-                pass
         except Exception as e:
             if self.logger:
                 self.logger.error(f'Failed to send emergency stop: {e}')

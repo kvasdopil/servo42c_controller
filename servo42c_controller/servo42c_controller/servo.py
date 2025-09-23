@@ -60,7 +60,6 @@ class Servo:
         """Initialize servo instance"""
         self.protocol = protocol
         self.id = servo_id
-        self.target_pulses = 0
         self.logger = logger
         self.min_angle = min_angle
         self.max_angle = max_angle
@@ -87,8 +86,6 @@ class Servo:
             self.logger.info(f'Initializing servo {self.id}')
             # Mark enabled and fetch initial position
             self.is_enabled = True
-            self.target_pulses = self.protocol.get_pulses(self.id)
-
             self.logger.info(f'Successfully initialized servo {self.id}')
             return True
 
@@ -113,15 +110,11 @@ class Servo:
                 f'Angle {angle} out of bounds for servo {self.id}')
             return False
 
-        new_target_pulses = self._angle_to_pulses(angle)
-        if new_target_pulses == self.target_pulses:
-            return True
-
+        target = self._angle_to_pulses(angle)
         try:
             acceleration = self.modbus_acceleration if accel_override is None else (accel_override & 0xFFFF)
             speed = self.modbus_speed if speed_override is None else (speed_override & 0xFFFF)
-            if self.protocol.move_absolute(self.id, acceleration, speed, new_target_pulses):
-                self.target_pulses = new_target_pulses
+            if self.protocol.move_absolute(self.id, acceleration, speed, target):
                 self.logger.info(f'Moving servo {self.id} to angle (rad): {angle}')
                 return True
         except Exception as e:
