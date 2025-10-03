@@ -2,10 +2,10 @@
 
 ## Overview
 
-A ROS2 controller for a robot arm, utilizing SERVO42C v1.0 controllers for stepper motors.
-Using Ros2 jazzy.
+NOTE: the code is upgraded to work with SERVO42C (modbus version). Old controller code for servo42c v.1.0 could be found at https://github.com/kvasdopil/servo42c_controller/tree/servo42c 
 
-At the moment only works with v.1.0 of protocol (no crc)
+A ROS2 controller for a robot arm, utilizing SERVO42D controllers for stepper motors.
+Using Ros2 jazzy.
 
 # TODO
 - add IK via moveit
